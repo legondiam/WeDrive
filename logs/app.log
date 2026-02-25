@@ -1,0 +1,249 @@
+{"level":"INFO","ts":"2026-02-06T16:03:41.791+0800","caller":"cmd/main.go:16","msg":"服务启动成功"}
+{"level":"\u001b[34mINFO\u001b[0m","ts":"2026-02-06T16:06:57.904+0800","caller":"cmd/main.go:16","msg":"服务启动成功"}
+{"level":"INFO","ts":"2026-02-06T16:07:47.868+0800","caller":"cmd/main.go:16","msg":"服务启动成功"}
+{"level":"\u001b[34mINFO\u001b[0m","ts":"2026-02-06T17:33:28.831+0800","caller":"cmd/main.go:16","msg":"服务启动成功"}
+{"level":"\u001b[31mFATAL\u001b[0m","ts":"2026-02-07T00:22:35.101+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败","error":"数据库初始化失败: dial tcp :0: connectex: The requested address is not valid in its context."}
+{"level":"FATAL","ts":"2026-02-07T00:23:30.159+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败","error":"数据库初始化失败: dial tcp :0: connectex: The requested address is not valid in its context."}
+{"level":"FATAL","ts":"2026-02-07T00:29:18.389+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败","error":"数据库初始化失败: dial tcp :0: connectex: The requested address is not valid in its context."}
+{"level":"INFO","ts":"2026-02-07T00:34:13.639+0800","caller":"cmd/main.go:31","msg":"服务启动成功"}
+{"level":"FATAL","ts":"2026-02-08T17:46:49.368+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败","error":"数据库初始化失败: Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)"}
+{"level":"FATAL","ts":"2026-02-11T23:29:02.201+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败","error":"数据库初始化失败: Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)","stacktrace":"main.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:23\nruntime.main\n\tD:/Go/src/runtime/proc.go:283"}
+{"level":"FATAL","ts":"2026-02-11T23:57:17.028+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败","error":"数据库初始化失败: Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)","stacktrace":"main.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:23\nruntime.main\n\tD:/Go/src/runtime/proc.go:283"}
+{"level":"FATAL","ts":"2026-02-12T00:00:50.029+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败","error":"数据库初始化失败: 数据库连接失败: Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)","stacktrace":"main.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:23\nruntime.main\n\tD:/Go/src/runtime/proc.go:283"}
+{"level":"FATAL","ts":"2026-02-12T00:01:22.879+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败","error":"数据库初始化失败: 数据库连接失败: Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)"}
+{"level":"FATAL","ts":"2026-02-12T00:12:48.902+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败:{Key:error Type:26 Integer:0 String: Interface:数据库初始化失败: 数据库连接失败: Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)}"}
+{"level":"FATAL","ts":"2026-02-12T00:14:16.613+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败:数据库初始化失败: 数据库连接失败: Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)"}
+{"level":"FATAL","ts":"2026-02-12T00:18:35.317+0800","caller":"cmd/main.go:23","msg":"依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)\n数据库连接失败\nWeDrive/internal/database.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19\nmain.(*App).MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:21\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n数据库初始化失败: %w\nmain.(*App).MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/app.go:17\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:21\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700"}
+2026-02-12T00:21:53.925+0800	FATAL	cmd/main.go:23	依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+数据库连接失败
+WeDrive/internal/database.MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19
+main.(*App).MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15
+main.main
+	C:/Users/ll/GolandProjects/WeDrive/cmd/main.go:21
+runtime.main
+	D:/Go/src/runtime/proc.go:283
+runtime.goexit
+	D:/Go/src/runtime/asm_amd64.s:1700
+数据库初始化失败: %w
+main.(*App).MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/cmd/app.go:17
+main.main
+	C:/Users/ll/GolandProjects/WeDrive/cmd/main.go:21
+runtime.main
+	D:/Go/src/runtime/proc.go:283
+runtime.goexit
+	D:/Go/src/runtime/asm_amd64.s:1700
+2026-02-12T00:23:24.480+0800	FATAL	cmd/main.go:23	依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+WeDrive/internal/database.MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19
+main.(*App).MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15
+main.main
+	C:/Users/ll/GolandProjects/WeDrive/cmd/main.go:21
+runtime.main
+	D:/Go/src/runtime/proc.go:283
+runtime.goexit
+	D:/Go/src/runtime/asm_amd64.s:1700
+数据库初始化失败: %w
+2026-02-12T00:24:31.320+0800	FATAL	cmd/main.go:23	依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+WeDrive/internal/database.MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19
+main.(*App).MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15
+main.main
+	C:/Users/ll/GolandProjects/WeDrive/cmd/main.go:21
+runtime.main
+	D:/Go/src/runtime/proc.go:283
+runtime.goexit
+	D:/Go/src/runtime/asm_amd64.s:1700
+数据库初始化失败:
+2026-02-12T00:25:01.110+0800	FATAL	cmd/main.go:23	依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+数据库连接失败
+WeDrive/internal/database.MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19
+main.(*App).MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15
+main.main
+	C:/Users/ll/GolandProjects/WeDrive/cmd/main.go:21
+runtime.main
+	D:/Go/src/runtime/proc.go:283
+runtime.goexit
+	D:/Go/src/runtime/asm_amd64.s:1700
+数据库初始化失败
+2026-02-12T00:25:15.363+0800	FATAL	cmd/main.go:23	依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+WeDrive/internal/database.MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19
+main.(*App).MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15
+main.main
+	C:/Users/ll/GolandProjects/WeDrive/cmd/main.go:21
+runtime.main
+	D:/Go/src/runtime/proc.go:283
+runtime.goexit
+	D:/Go/src/runtime/asm_amd64.s:1700
+数据库初始化失败
+2026-02-12T00:27:54.046+0800	FATAL	cmd/main.go:24	依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+WeDrive/internal/database.MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19
+main.(*App).MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15
+main.main
+	C:/Users/ll/GolandProjects/WeDrive/cmd/main.go:22
+runtime.main
+	D:/Go/src/runtime/proc.go:283
+runtime.goexit
+	D:/Go/src/runtime/asm_amd64.s:1700
+数据库初始化失败
+依赖初始化失败111
+2026-02-12T00:41:25.708+0800	[31mFATAL[0m	cmd/main.go:22	依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+WeDrive/internal/database.MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19
+main.(*App).MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15
+main.main
+	C:/Users/ll/GolandProjects/WeDrive/cmd/main.go:20
+runtime.main
+	D:/Go/src/runtime/proc.go:283
+runtime.goexit
+	D:/Go/src/runtime/asm_amd64.s:1700
+数据库初始化失败
+2026-02-12T00:41:34.193+0800	FATAL	cmd/main.go:22	依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+WeDrive/internal/database.MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19
+main.(*App).MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15
+main.main
+	C:/Users/ll/GolandProjects/WeDrive/cmd/main.go:20
+runtime.main
+	D:/Go/src/runtime/proc.go:283
+runtime.goexit
+	D:/Go/src/runtime/asm_amd64.s:1700
+数据库初始化失败
+2026-02-12T00:44:38.264+0800	[31mFATAL[0m	cmd/main.go:22	依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+WeDrive/internal/database.MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19
+main.(*App).MysqlInit
+	C:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15
+main.main
+	C:/Users/ll/GolandProjects/WeDrive/cmd/main.go:20
+runtime.main
+	D:/Go/src/runtime/proc.go:283
+runtime.goexit
+	D:/Go/src/runtime/asm_amd64.s:1700
+数据库初始化失败
+{"level":"FATAL","ts":"2026-02-12T00:44:38.264+0800","caller":"cmd/main.go:22","msg":"依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)\nWeDrive/internal/database.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19\nmain.(*App).MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:20\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n数据库初始化失败"}
+{"level":"FATAL","ts":"2026-02-12T00:47:15.537+0800","caller":"cmd/main.go:22","msg":"依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)\nWeDrive/internal/database.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19\nmain.(*App).MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:20\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n数据库初始化失败"}
+{"level":"FATAL","ts":"2026-02-12T00:49:00.386+0800","caller":"cmd/main.go:22","msg":"依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)\nWeDrive/internal/database.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19\nmain.(*App).MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:20\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n数据库初始化失败"}
+{"level":"FATAL","ts":"2026-02-12T00:56:21.033+0800","caller":"cmd/main.go:22","msg":"依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)\nWeDrive/internal/database.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19\nmain.(*App).MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:20\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n数据库初始化失败"}
+{"level":"FATAL","ts":1770829017.867495,"caller":"cmd/main.go:22","msg":"依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)\nWeDrive/internal/database.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19\nmain.(*App).MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:20\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n数据库初始化失败"}
+{"level":"fatal","ts":"2026-02-12T00:58:27.862+0800","caller":"cmd/main.go:22","msg":"依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)\nWeDrive/internal/database.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:19\nmain.(*App).MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:20\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n数据库初始化失败"}
+{"level":"fatal","ts":"2026-02-12T16:35:30.281+0800","caller":"cmd/main.go:22","msg":"依赖初始化失败:Error 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)\nWeDrive/internal/database.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/database/mysql.go:20\nmain.(*App).MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/app.go:15\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:20\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n数据库初始化失败"}
+{"level":"info","ts":"2026-02-12T16:35:37.258+0800","caller":"cmd/main.go:30","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-13T17:40:48.810+0800","caller":"cmd/main.go:24","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-14T17:08:03.671+0800","caller":"cmd/main.go:24","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-14T22:17:19.328+0800","caller":"cmd/main.go:24","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-14T22:22:18.529+0800","caller":"api/user-handler.go:37","msg":"用户注册成功usernamek18iui_ggl52"}
+{"level":"info","ts":"2026-02-20T15:36:53.596+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-20T15:38:42.856+0800","caller":"api/user-handler.go:38","msg":"用户注册成功。username:user1"}
+{"level":"info","ts":"2026-02-20T15:45:55.464+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-20T15:46:02.164+0800","caller":"api/user-handler.go:53","msg":"用户名或密码错误：账号或密码错误\nWeDrive/internal/service.init\n\t<autogenerated>:1\nruntime.doInit1\n\tD:/Go/src/runtime/proc.go:7371\nruntime.doInit\n\tD:/Go/src/runtime/proc.go:7338\nruntime.main\n\tD:/Go/src/runtime/proc.go:254\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n账号或密码错误"}
+{"level":"info","ts":"2026-02-20T15:48:56.160+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"error","ts":"2026-02-20T15:48:58.928+0800","caller":"api/user-handler.go:36","msg":"服务器错误：Error 1062 (23000): Duplicate entry 'user1' for key 'users.uni_users_username'\nWeDrive/internal/repository.(*UserRepo).CreateUser\n\tC:/Users/ll/GolandProjects/WeDrive/internal/repository/user-repo.go:22\nWeDrive/internal/service.(*UserService).Register\n\tC:/Users/ll/GolandProjects/WeDrive/internal/service/user-service.go:35\nWeDrive/internal/api.(*UserHandler).Register\n\tC:/Users/ll/GolandProjects/WeDrive/internal/api/user-handler.go:28\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.CustomRecoveryWithWriter.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/recovery.go:92\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.LoggerWithConfig.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/logger.go:249\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.(*Engine).handleHTTPRequest\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:689\ngithub.com/gin-gonic/gin.(*Engine).ServeHTTP\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:643\nnet/http.serverHandler.ServeHTTP\n\tD:/Go/src/net/http/server.go:3301\nnet/http.(*conn).serve\n\tD:/Go/src/net/http/server.go:2102\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n用户名已存在"}
+{"level":"info","ts":"2026-02-20T15:50:59.195+0800","caller":"api/user-handler.go:40","msg":"用户注册成功。username:user2"}
+{"level":"info","ts":"2026-02-20T15:51:17.478+0800","caller":"api/user-handler.go:55","msg":"用户名或密码错误：账号或密码错误\nWeDrive/internal/service.init\n\t<autogenerated>:1\nruntime.doInit1\n\tD:/Go/src/runtime/proc.go:7371\nruntime.doInit\n\tD:/Go/src/runtime/proc.go:7338\nruntime.main\n\tD:/Go/src/runtime/proc.go:254\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n账号或密码错误"}
+{"level":"info","ts":"2026-02-20T15:54:59.668+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-20T15:55:05.057+0800","caller":"api/user-handler.go:66","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-20T15:56:03.828+0800","caller":"api/user-handler.go:55","msg":"用户名或密码错误：账号或密码错误\nWeDrive/internal/service.init\n\t<autogenerated>:1\nruntime.doInit1\n\tD:/Go/src/runtime/proc.go:7371\nruntime.doInit\n\tD:/Go/src/runtime/proc.go:7338\nruntime.main\n\tD:/Go/src/runtime/proc.go:254\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\n账号或密码错误"}
+{"level":"info","ts":"2026-02-20T17:31:32.972+0800","caller":"api/user-handler.go:66","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-20T17:37:35.058+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-20T17:37:40.142+0800","caller":"api/user-handler.go:66","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-20T17:38:59.126+0800","caller":"api/user-handler.go:66","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-21T11:27:42.362+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-21T11:28:29.425+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-21T11:33:19.015+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-21T11:34:00.128+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"error","ts":"2026-02-21T11:35:12.048+0800","caller":"api/user-handler.go:88","msg":"服务器错误：token is expired by 6m43.0480409s\nWeDrive/pkg/utils/jwts.ValidateToken\n\tC:/Users/ll/GolandProjects/WeDrive/pkg/utils/jwts/jwt.go:83\nWeDrive/internal/service.(*UserService).RefreshToken\n\tC:/Users/ll/GolandProjects/WeDrive/internal/service/user-service.go:86\nWeDrive/internal/api.(*UserHandler).Refresh\n\tC:/Users/ll/GolandProjects/WeDrive/internal/api/user-handler.go:79\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.CustomRecoveryWithWriter.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/recovery.go:92\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.LoggerWithConfig.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/logger.go:249\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.(*Engine).handleHTTPRequest\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:689\ngithub.com/gin-gonic/gin.(*Engine).ServeHTTP\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:643\nnet/http.serverHandler.ServeHTTP\n\tD:/Go/src/net/http/server.go:3301\nnet/http.(*conn).serve\n\tD:/Go/src/net/http/server.go:2102\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\ntoken校验失败"}
+{"level":"info","ts":"2026-02-21T11:35:53.182+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user2"}
+{"level":"error","ts":"2026-02-21T11:36:04.981+0800","caller":"api/user-handler.go:88","msg":"服务器错误：token is expired by 11.9819453s\nWeDrive/pkg/utils/jwts.ValidateToken\n\tC:/Users/ll/GolandProjects/WeDrive/pkg/utils/jwts/jwt.go:83\nWeDrive/internal/service.(*UserService).RefreshToken\n\tC:/Users/ll/GolandProjects/WeDrive/internal/service/user-service.go:86\nWeDrive/internal/api.(*UserHandler).Refresh\n\tC:/Users/ll/GolandProjects/WeDrive/internal/api/user-handler.go:79\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.CustomRecoveryWithWriter.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/recovery.go:92\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.LoggerWithConfig.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/logger.go:249\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.(*Engine).handleHTTPRequest\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:689\ngithub.com/gin-gonic/gin.(*Engine).ServeHTTP\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:643\nnet/http.serverHandler.ServeHTTP\n\tD:/Go/src/net/http/server.go:3301\nnet/http.(*conn).serve\n\tD:/Go/src/net/http/server.go:2102\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\ntoken校验失败"}
+{"level":"info","ts":"2026-02-21T11:40:58.471+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"error","ts":"2026-02-21T11:41:05.466+0800","caller":"api/user-handler.go:88","msg":"服务器错误：signature is invalid\nWeDrive/pkg/utils/jwts.ValidateToken\n\tC:/Users/ll/GolandProjects/WeDrive/pkg/utils/jwts/jwt.go:83\nWeDrive/internal/service.(*UserService).RefreshToken\n\tC:/Users/ll/GolandProjects/WeDrive/internal/service/user-service.go:86\nWeDrive/internal/api.(*UserHandler).Refresh\n\tC:/Users/ll/GolandProjects/WeDrive/internal/api/user-handler.go:79\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.CustomRecoveryWithWriter.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/recovery.go:92\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.LoggerWithConfig.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/logger.go:249\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.(*Engine).handleHTTPRequest\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:689\ngithub.com/gin-gonic/gin.(*Engine).ServeHTTP\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:643\nnet/http.serverHandler.ServeHTTP\n\tD:/Go/src/net/http/server.go:3301\nnet/http.(*conn).serve\n\tD:/Go/src/net/http/server.go:2102\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\ntoken校验失败"}
+{"level":"info","ts":"2026-02-21T11:42:28.247+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"error","ts":"2026-02-21T11:42:29.873+0800","caller":"api/user-handler.go:88","msg":"服务器错误：signature is invalid\nWeDrive/pkg/utils/jwts.ValidateToken\n\tC:/Users/ll/GolandProjects/WeDrive/pkg/utils/jwts/jwt.go:83\nWeDrive/internal/service.(*UserService).RefreshToken\n\tC:/Users/ll/GolandProjects/WeDrive/internal/service/user-service.go:86\nWeDrive/internal/api.(*UserHandler).Refresh\n\tC:/Users/ll/GolandProjects/WeDrive/internal/api/user-handler.go:79\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.CustomRecoveryWithWriter.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/recovery.go:92\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.LoggerWithConfig.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/logger.go:249\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.(*Engine).handleHTTPRequest\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:689\ngithub.com/gin-gonic/gin.(*Engine).ServeHTTP\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:643\nnet/http.serverHandler.ServeHTTP\n\tD:/Go/src/net/http/server.go:3301\nnet/http.(*conn).serve\n\tD:/Go/src/net/http/server.go:2102\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\ntoken校验失败"}
+{"level":"info","ts":"2026-02-21T11:43:15.264+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user2"}
+{"level":"error","ts":"2026-02-21T11:48:14.895+0800","caller":"api/user-handler.go:88","msg":"服务器错误：tokenstring should not contain 'bearer '\nWeDrive/pkg/utils/jwts.ValidateToken\n\tC:/Users/ll/GolandProjects/WeDrive/pkg/utils/jwts/jwt.go:83\nWeDrive/internal/service.(*UserService).RefreshToken\n\tC:/Users/ll/GolandProjects/WeDrive/internal/service/user-service.go:86\nWeDrive/internal/api.(*UserHandler).Refresh\n\tC:/Users/ll/GolandProjects/WeDrive/internal/api/user-handler.go:79\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.CustomRecoveryWithWriter.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/recovery.go:92\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.LoggerWithConfig.func1\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/logger.go:249\ngithub.com/gin-gonic/gin.(*Context).Next\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/context.go:192\ngithub.com/gin-gonic/gin.(*Engine).handleHTTPRequest\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:689\ngithub.com/gin-gonic/gin.(*Engine).ServeHTTP\n\tC:/Users/ll/go/pkg/mod/github.com/gin-gonic/gin@v1.11.0/gin.go:643\nnet/http.serverHandler.ServeHTTP\n\tD:/Go/src/net/http/server.go:3301\nnet/http.(*conn).serve\n\tD:/Go/src/net/http/server.go:2102\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\ntoken校验失败"}
+{"level":"info","ts":"2026-02-21T11:48:41.487+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-21T14:18:13.114+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-21T14:18:27.901+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-21T14:20:04.812+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user2"}
+{"level":"fatal","ts":"2026-02-23T11:05:20.312+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:dial tcp :0: connectex: The requested address is not valid in its context.\nWeDrive/internal/initialize.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/mysql.go:20\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:12\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nmysql初始化失败"}
+{"level":"fatal","ts":"2026-02-23T11:06:36.571+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:dial tcp :0: connectex: The requested address is not valid in its context.\nWeDrive/internal/initialize.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/mysql.go:21\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:12\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nmysql初始化失败"}
+{"level":"fatal","ts":"2026-02-23T11:10:21.839+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:dial tcp :0: connectex: The requested address is not valid in its context.\nWeDrive/internal/initialize.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/mysql.go:21\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:12\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nmysql初始化失败"}
+{"level":"fatal","ts":"2026-02-23T11:10:43.472+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:dial tcp :0: connectex: The requested address is not valid in its context.\nWeDrive/internal/initialize.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/mysql.go:21\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:12\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nmysql初始化失败"}
+{"level":"fatal","ts":"2026-02-23T11:12:11.177+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:dial tcp :0: connectex: The requested address is not valid in its context.\nWeDrive/internal/initialize.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/mysql.go:21\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:12\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nmysql初始化失败"}
+{"level":"fatal","ts":"2026-02-23T11:14:14.776+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": dial tcp 127.0.0.1:9000: connectex: No connection could be made because the target machine actively refused it.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}
+{"level":"info","ts":"2026-02-23T11:16:12.021+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T11:20:40.487+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-23T11:23:09.156+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T11:25:58.090+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"fatal","ts":"2026-02-23T11:27:30.131+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Error 1170 (42000): BLOB/TEXT column 'file_hash' used in key specification without a key length\nWeDrive/internal/initialize.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/mysql.go:29\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:12\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nmysql初始化失败"}
+{"level":"fatal","ts":"2026-02-23T11:30:54.833+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Error 1170 (42000): BLOB/TEXT column 'file_hash' used in key specification without a key length\nWeDrive/internal/initialize.MysqlInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/mysql.go:29\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:12\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nmysql初始化失败"}
+{"level":"info","ts":"2026-02-23T11:32:24.623+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T11:33:49.097+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T11:34:02.943+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-23T11:34:08.165+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-23T11:35:18.456+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user2"}
+{"level":"info","ts":"2026-02-23T14:07:25.617+0800","caller":"api/user-handler.go:68","msg":"用户登录成功。username:user1"}
+{"level":"info","ts":"2026-02-23T14:45:23.601+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T14:45:58.340+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T14:46:44.041+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T14:48:29.695+0800","caller":"api/user-handler.go:70","msg":"用户登录成功。username:user1"}
+{"level":"info","ts":"2026-02-23T14:52:06.238+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T14:53:11.163+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T14:53:13.724+0800","caller":"api/file-handler.go:53","msg":"无效的文件id:strconv.ParseInt: parsing \"\": invalid syntax"}
+{"level":"info","ts":"2026-02-23T14:56:14.016+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T14:56:16.268+0800","caller":"api/file-handler.go:53","msg":"无效的文件id:strconv.ParseInt: parsing \"\": invalid syntax"}
+{"level":"info","ts":"2026-02-23T14:56:44.246+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T23:17:59.064+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-23T23:20:04.840+0800","caller":"api/user-handler.go:70","msg":"用户登录成功。username:user1"}
+{"level":"info","ts":"2026-02-24T00:14:13.994+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T00:14:41.919+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T00:14:48.177+0800","caller":"api/user-handler.go:70","msg":"用户登录成功。username:user1"}
+{"level":"info","ts":"2026-02-24T00:46:52.838+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T00:47:27.292+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"fatal","ts":"2026-02-24T14:38:13.510+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": dial tcp 127.0.0.1:9000: connectex: No connection could be made because the target machine actively refused it.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}
+{"level":"fatal","ts":"2026-02-24T17:10:14.572+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": dial tcp 127.0.0.1:9000: connectex: No connection could be made because the target machine actively refused it.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}
+{"level":"fatal","ts":"2026-02-24T17:17:23.057+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": dial tcp 127.0.0.1:9000: connectex: No connection could be made because the target machine actively refused it.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}
+{"level":"info","ts":"2026-02-24T17:37:50.385+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T17:38:25.968+0800","caller":"api/user-handler.go:70","msg":"用户登录成功。username:user1"}
+{"level":"info","ts":"2026-02-24T17:40:46.866+0800","caller":"api/file-handler.go:47","msg":"文件上传成功"}
+{"level":"info","ts":"2026-02-24T17:41:16.433+0800","caller":"api/file-handler.go:47","msg":"文件上传成功"}
+{"level":"info","ts":"2026-02-24T17:41:30.308+0800","caller":"api/file-handler.go:47","msg":"文件上传成功"}
+{"level":"info","ts":"2026-02-24T18:22:43.204+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T18:22:44.495+0800","caller":"service/file-service.go:142","msg":"文件大小:0"}
+{"level":"info","ts":"2026-02-24T18:22:44.495+0800","caller":"service/file-service.go:142","msg":"文件大小:0"}
+{"level":"info","ts":"2026-02-24T18:27:13.493+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T18:27:15.944+0800","caller":"service/file-service.go:142","msg":"文件大小:0"}
+{"level":"info","ts":"2026-02-24T18:27:15.944+0800","caller":"service/file-service.go:142","msg":"文件大小:0"}
+{"level":"info","ts":"2026-02-24T18:28:06.129+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T18:28:10.307+0800","caller":"service/file-service.go:142","msg":"文件大小:308483"}
+{"level":"info","ts":"2026-02-24T18:28:10.307+0800","caller":"service/file-service.go:142","msg":"文件大小:308483"}
+{"level":"info","ts":"2026-02-24T19:09:07.761+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T19:09:16.679+0800","caller":"service/file-service.go:143","msg":"文件大小:301.25 KB"}
+{"level":"info","ts":"2026-02-24T19:09:16.679+0800","caller":"service/file-service.go:143","msg":"文件大小:301.25 KB"}
+{"level":"info","ts":"2026-02-24T19:09:49.119+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"fatal","ts":"2026-02-24T22:53:03.403+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": dial tcp 127.0.0.1:9000: connectex: No connection could be made because the target machine actively refused it.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}
+{"level":"info","ts":"2026-02-24T22:53:29.029+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T22:56:05.638+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T22:56:26.595+0800","caller":"api/user-handler.go:70","msg":"用户登录成功。username:user1"}
+{"level":"info","ts":"2026-02-24T23:04:27.046+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T23:05:53.435+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T23:44:57.537+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-02-24T23:50:04.435+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"error","ts":"2026-02-24T23:53:20.539+0800","caller":"api/file-handler.go:68","msg":"创建文件夹失败：创建文件夹失败: Error 1452 (23000): Cannot add or update a child row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"info","ts":"2026-02-25T00:07:14.406+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"error","ts":"2026-02-25T00:09:31.855+0800","caller":"api/file-handler.go:68","msg":"创建文件夹失败：父文件夹不合法: 无权访问该目录"}
+{"level":"info","ts":"2026-02-25T00:15:18.577+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"error","ts":"2026-02-25T00:15:51.488+0800","caller":"api/file-handler.go:110","msg":"获取用户文件列表失败：父文件夹不合法: 父文件夹不存在"}
+{"level":"fatal","ts":"2026-02-25T13:16:18.536+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": dial tcp 127.0.0.1:9000: connectex: No connection could be made because the target machine actively refused it.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}

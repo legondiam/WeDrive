@@ -1,0 +1,29 @@
+#应用配置
+app:
+  port: 8080
+#数据库配置
+database:
+  mysql:
+    host: "127.0.0.1"
+    port: 3306
+    user: "root"
+    password: "20050925"
+  redis:
+    host: "127.0.0.1"
+    port: 6379
+    password: "redis"
+#oss配置
+minio:
+  endpoint: "127.0.0.1:9000"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  use_ssl: false                # 本地开发填 false，线上 HTTPS 填 true
+  bucket_name: "wedrive"        # 默认桶名称
+  location: "us-east-1"         # 桶所在的区域
+  upload_timeout: "30s"           # 上传超时时间
+#jwt配置
+jwt:
+  SecretKey: "YOUR-SECRET-KEY"
+  Issuer: "JwtConfigAdmin"
+  AccessTokenExpiration: "168h"
+  RefreshTokenExpiration: "168h"
