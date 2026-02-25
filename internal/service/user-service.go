@@ -4,6 +4,7 @@ import (
 	"WeDrive/internal/model"
 	"WeDrive/internal/repository"
 	"WeDrive/pkg/logger"
+	"WeDrive/pkg/utils/convert"
 	"WeDrive/pkg/utils/hash"
 	"WeDrive/pkg/utils/jwts"
 	"context"
@@ -20,6 +21,11 @@ var ErrTokenNotFound = errors.New("token不存在")
 type UserService struct {
 	userRepo      *repository.UserRepo
 	usercacheRepo *repository.UserCacheRepo
+}
+
+type UserInfoResp struct {
+	TotalSpace string
+	UsedSpace  string
 }
 
 func NewUserService(userrepo *repository.UserRepo, usercacherepo *repository.UserCacheRepo) *UserService {
@@ -118,4 +124,18 @@ func (s *UserService) RefreshToken(ctx context.Context, oldRefreshToken string) 
 		return "", "", errors.WithMessage(err, "删除refreshToken失败")
 	}
 	return accessToken, newRefreshToken, nil
+}
+
+// GetUserInfo 获取用户信息
+func (s *UserService) GetUserInfo(ctx context.Context, userID uint) (*UserInfoResp, error) {
+	user, err := s.userRepo.GetUserInfo(ctx, userID)
+	if err != nil {
+		return nil, errors.WithMessage(err, "获取用户信息失败")
+	}
+	//格式化返回数据
+	userInfoResp := &UserInfoResp{
+		TotalSpace: convert.FormatFileSize(user.TotalSpace),
+		UsedSpace:  convert.FormatFileSize(user.UsedSpace),
+	}
+	return userInfoResp, nil
 }

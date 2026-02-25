@@ -40,6 +40,10 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	// 上传文件
 	err = h.fileService.UploadFile(c.Request.Context(), fileHeader, userID.(uint), parentID)
 	if err != nil {
+		if errors.Is(service.ErrUserSpaceNotEnough, err) {
+			c.JSON(400, gin.H{"error": "用户空间不足"})
+			return
+		}
 		c.JSON(500, gin.H{"error": "上传失败"})
 		logger.S.Errorf("文件上传失败：%v", err)
 		return
