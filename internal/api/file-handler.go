@@ -40,6 +40,10 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	// 上传文件
 	err = h.fileService.UploadFile(c.Request.Context(), fileHeader, userID.(uint), parentID)
 	if err != nil {
+		if errors.Is(service.ErrUserSpaceNotEnough, err) {
+			c.JSON(400, gin.H{"error": "用户空间不足"})
+			return
+		}
 		c.JSON(500, gin.H{"error": "上传失败"})
 		logger.S.Errorf("文件上传失败：%v", err)
 		return
@@ -64,7 +68,7 @@ func (h *FileHandler) CreateFolder(c *gin.Context) {
 
 	userID, _ := c.Get("userID")
 	if err := h.fileService.CreateFolder(c.Request.Context(), userID.(uint), parentID, req.Name); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": "创建文件夹失败"})
 		logger.S.Errorf("创建文件夹失败：%v", err)
 		return
 	}

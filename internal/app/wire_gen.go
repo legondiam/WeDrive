@@ -27,7 +27,7 @@ func BuildApp(db *gorm.DB, redis2 *redis.Client, minio2 *minio.Client) *gin.Engi
 	userHandler := api.NewUserHandler(userService)
 	fileRepo := repository.NewFileRepo(db)
 	storage := oss.NewStorage(minio2)
-	fileService := service.NewFileService(fileRepo, storage, db)
+	fileService := service.NewFileService(fileRepo, userRepo, storage, db)
 	fileHandler := api.NewFileHandler(fileService)
 	engine := router.NewRouter(userHandler, fileHandler)
 	return engine

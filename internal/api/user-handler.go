@@ -4,6 +4,7 @@ import (
 	"WeDrive/internal/config"
 	"WeDrive/internal/service"
 	"WeDrive/pkg/logger"
+
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
 )
@@ -94,4 +95,15 @@ func (h *UserHandler) Refresh(c *gin.Context) {
 	maxAge := int(config.GlobalConf.Jwt.RefreshTokenExpiration.Seconds())
 	c.SetCookie("refreshToken", refreshToken, maxAge, "/", "localhost", false, true)
 	c.JSON(200, gin.H{"message": "刷新成功", "accessToken": accessToken})
+}
+
+func (h *UserHandler) GetUserInfo(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	userinfo, err := h.userService.GetUserInfo(c.Request.Context(), userID.(uint))
+	if err != nil {
+		c.JSON(500, gin.H{"error": "获取用户信息失败"})
+		logger.S.Errorf("获取用户信息失败：%+v", err)
+		return
+	}
+	c.JSON(200, gin.H{"data": userinfo})
 }

@@ -15,8 +15,11 @@ import (
 	"gorm.io/gorm"
 )
 
+var ErrUserSpaceNotEnough = errors.New("用户空间不足")
+
 type FileService struct {
 	fileRepo *repository.FileRepo
+	userRepo *repository.UserRepo
 	storage  *oss.Storage
 	db       *gorm.DB
 }
@@ -38,8 +41,8 @@ type FileResp struct {
 	ParentID  int64  `json:"parent_id"`
 }
 
-func NewFileService(fileRepo *repository.FileRepo, storage *oss.Storage, db *gorm.DB) *FileService {
-	return &FileService{fileRepo: fileRepo, storage: storage, db: db}
+func NewFileService(fileRepo *repository.FileRepo, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
+	return &FileService{fileRepo: fileRepo, storage: storage, db: db, userRepo: userRepo}
 }
 
 // checkParentFolder 检查父文件夹是否合法
@@ -74,6 +77,14 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	if err != nil {
 		return errors.WithMessage(err, "父文件夹不合法")
 	}
+	// 检查用户空间
+	user, err := s.userRepo.GetUserInfo(ctx, userID)
+	if err != nil {
+		return errors.WithMessage(err, "获取用户信息失败")
+	}
+	if user.UsedSpace+fileHeader.Size > user.TotalSpace {
+		return ErrUserSpaceNotEnough
+	}
 	// 计算文件hash
 	fileHash, err := hash.HashFile(fileHeader)
 	if err != nil {
@@ -83,16 +94,24 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	fileStore, err := s.fileRepo.GetFileByHash(ctx, fileHash)
 	// 秒传成功
 	if err == nil {
-		err = s.fileRepo.CreateUserFile(ctx, &model.UserFile{
-			UserId:      userID,
-			FileName:    fileHeader.Filename,
-			FileStoreID: &fileStore.ID,
-			ParentID:    parentID,
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			err = s.fileRepo.CreateUserFile(ctx, &model.UserFile{
+				UserId:      userID,
+				FileName:    fileHeader.Filename,
+				FileStoreID: &fileStore.ID,
+				ParentID:    parentID,
+			}, tx)
+			if err != nil {
+				return errors.WithMessage(err, "秒传文件存储失败")
+			}
+			// 更新用户空间
+			err = s.userRepo.UpdateUserSpace(ctx, userID, fileHeader.Size, tx)
+			if err != nil {
+				return errors.WithMessage(err, "更新用户空间失败")
+			}
+			return nil
 		})
-		if err != nil {
-			return errors.WithMessage(err, "秒传文件存储失败")
-		}
-		return nil
+		return err
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return errors.WithMessage(err, "文件查询异常")
@@ -143,6 +162,11 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		err = s.fileRepo.CreateUserFile(ctx, newUserFile, tx)
 		if err != nil {
 			return errors.WithMessage(err, "用户文件数据存储失败")
+		}
+		// 更新用户空间
+		err = s.userRepo.UpdateUserSpace(ctx, userID, fileHeader.Size, tx)
+		if err != nil {
+			return errors.WithMessage(err, "更新用户空间失败")
 		}
 		shouldCleanMinio = false
 		return nil

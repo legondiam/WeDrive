@@ -14,7 +14,6 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
-	// ... 导入你的包
 )
 
 func BuildApp(db *gorm.DB, redis *redis.Client, minio *minio.Client) *gin.Engine {
