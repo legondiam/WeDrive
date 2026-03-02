@@ -4,6 +4,7 @@ import (
 	"WeDrive/internal/model"
 	"WeDrive/internal/oss"
 	"WeDrive/internal/repository"
+	"WeDrive/pkg/logger"
 	"WeDrive/pkg/utils/convert"
 	"WeDrive/pkg/utils/hash"
 	"context"
@@ -16,6 +17,7 @@ import (
 )
 
 var ErrUserSpaceNotEnough = errors.New("用户空间不足")
+var ErrFileNotFound = errors.New("文件不存在")
 
 type FileService struct {
 	fileRepo *repository.FileRepo
@@ -178,7 +180,7 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 	err := s.fileRepo.DeleteUserFile(ctx, userID, userFileID)
 	if err != nil {
 		if errors.Is(repository.ErrFileNotFound, err) {
-			return err
+			return ErrFileNotFound
 		}
 		return errors.WithMessage(err, "删除文件失败")
 	}
@@ -272,9 +274,70 @@ func (s *FileService) RestoreUserFile(ctx context.Context, userID uint, ID uint)
 	err := s.fileRepo.RestoreUserFile(ctx, userID, ID)
 	if err != nil {
 		if errors.Is(repository.ErrFileNotFound, err) {
-			return err
+			return ErrFileNotFound
 		}
 		return errors.WithMessage(err, "恢复文件失败")
 	}
+	return nil
+}
+
+// PermanentlyDeleteFile 永久删除回收站中的文件/文件夹
+func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, userFileID uint) error {
+	// 仅允许对当前用户回收站中的文件进行永久删除
+	file, err := s.fileRepo.GetDeletedUserFileByID(ctx, userID, userFileID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrFileNotFound
+		}
+		return errors.WithMessage(err, "查询回收站文件失败")
+	}
+
+	// 文件夹不占空间，也没有文件池记录，直接硬删除用户文件记录
+	if file.IsFolder || file.FileStoreID == nil {
+		return s.fileRepo.HardDeleteUserFile(ctx, userID, userFileID)
+	}
+
+	// 普通文件：需要释放用户空间，并在无人引用时删除文件池和 MinIO 对象
+	fileSize := file.FileStore.FileSize
+	storeID := *file.FileStoreID
+	objectName := file.FileStore.FileAddr
+
+	// 开启事务:删除用户文件记录、扣减用户空间、检查剩余引用并删除文件池记录
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// 永久删除用户文件记录
+		if err := s.fileRepo.HardDeleteUserFile(ctx, userID, userFileID, tx); err != nil {
+			return errors.WithMessage(err, "永久删除用户文件失败")
+		}
+
+		// 扣减用户空间
+		if err := s.userRepo.UpdateUserSpace(ctx, userID, -fileSize, tx); err != nil {
+			return errors.WithMessage(err, "更新用户空间失败")
+		}
+
+		// 检查是否还有其他未删除引用
+		count, err := s.fileRepo.CountUserFileByStoreID(ctx, storeID, tx)
+		if err != nil {
+			return errors.WithMessage(err, "统计文件引用数量失败")
+		}
+		if count == 0 {
+			// 无其他引用时，删除文件池记录
+			if err := s.fileRepo.HardDeleteFileStore(ctx, storeID, tx); err != nil {
+				return errors.WithMessage(err, "删除文件池记录失败")
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// 事务提交后，若没有其他引用，则尝试删除 MinIO 对象
+	count, err := s.fileRepo.CountUserFileByStoreID(ctx, storeID)
+	if err == nil && count == 0 {
+		if delErr := s.storage.DeleteFile(ctx, objectName); delErr != nil {
+			logger.S.Errorf("删除MinIO对象失败：%v", delErr)
+		}
+	}
+
 	return nil
 }

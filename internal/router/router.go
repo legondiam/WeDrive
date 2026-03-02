@@ -22,6 +22,7 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler) *gin.
 		privateGroup.POST("/file/upload-folder", fileHandler.CreateFolder)
 		privateGroup.GET("/file/list", fileHandler.GetUserFile)
 		privateGroup.DELETE("/file/delete/:ID", fileHandler.Delete)
+		privateGroup.DELETE("/file/permanent-delete/:ID", fileHandler.PermanentlyDelete)
 		privateGroup.GET("/file/recycle", fileHandler.ListRecycleBin)
 		privateGroup.POST("/file/restore/:ID", fileHandler.Restore)
 

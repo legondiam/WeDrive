@@ -95,3 +95,71 @@ func (r *FileRepo) RestoreUserFile(ctx context.Context, userID uint, ID uint) er
 	}
 	return errors.WithStack(result.Error)
 }
+
+// GetDeletedUserFileByID 获取回收站中的单个用户文件（已软删除）
+func (r *FileRepo) GetDeletedUserFileByID(ctx context.Context, userID uint, userFileID uint, tx ...*gorm.DB) (*model.UserFile, error) {
+	db := r.db
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+
+	var file model.UserFile
+	err := db.WithContext(ctx).Unscoped().
+		Where("user_id = ? AND id = ? AND deleted_at IS NOT NULL", userID, userFileID).
+		Preload("FileStore").
+		First(&file).Error
+
+	return &file, errors.WithStack(err)
+}
+
+// HardDeleteUserFile 永久删除用户文件记录
+func (r *FileRepo) HardDeleteUserFile(ctx context.Context, userID uint, userFileID uint, tx ...*gorm.DB) error {
+	db := r.db
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+
+	result := db.WithContext(ctx).Unscoped().
+		Where("user_id = ? AND id = ?", userID, userFileID).
+		Delete(&model.UserFile{})
+	if result.Error != nil {
+		return errors.WithStack(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrFileNotFound
+	}
+	return nil
+}
+
+// CountUserFileByStoreID 统计未被软删除的用户文件引用数量
+func (r *FileRepo) CountUserFileByStoreID(ctx context.Context, fileStoreID uint, tx ...*gorm.DB) (int64, error) {
+	db := r.db
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+
+	var count int64
+	err := db.WithContext(ctx).
+		Model(&model.UserFile{}).
+		Where("file_store_id = ? AND deleted_at IS NULL", fileStoreID).
+		Count(&count).Error
+	if err != nil {
+		return 0, errors.WithStack(err)
+	}
+	return count, nil
+}
+
+// HardDeleteFileStore 永久删除文件池中的文件元数据
+func (r *FileRepo) HardDeleteFileStore(ctx context.Context, fileStoreID uint, tx ...*gorm.DB) error {
+	db := r.db
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+
+	result := db.WithContext(ctx).Unscoped().
+		Delete(&model.FileStore{}, fileStoreID)
+	if result.Error != nil {
+		return errors.WithStack(result.Error)
+	}
+	return nil
+}

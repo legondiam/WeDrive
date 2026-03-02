@@ -2,7 +2,6 @@ package jwts
 
 import (
 	"WeDrive/internal/config"
-	"fmt"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -20,7 +19,7 @@ func GenerateAccessToken(userID uint, username string) (string, error) {
 	//获取jwt配置
 	jwtconfig := config.GlobalConf.Jwt
 	//设置过期时间
-	fmt.Printf("从配置读取到的过期时间: %v\n", jwtconfig.AccessTokenExpiration)
+	//fmt.Printf("从配置读取到的过期时间: %v\n", jwtconfig.AccessTokenExpiration)
 	expirationTime := time.Now().Add(jwtconfig.AccessTokenExpiration)
 	claims := &CustomClaims{
 		UserID:   userID,

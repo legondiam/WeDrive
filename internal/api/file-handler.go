@@ -1,7 +1,6 @@
 package api
 
 import (
-	"WeDrive/internal/repository"
 	"WeDrive/internal/service"
 	"WeDrive/pkg/logger"
 	"errors"
@@ -88,7 +87,7 @@ func (h *FileHandler) Delete(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	err = h.fileService.DeleteFile(c.Request.Context(), userID.(uint), uint(ID))
 	if err != nil {
-		if errors.Is(repository.ErrFileNotFound, err) {
+		if errors.Is(service.ErrFileNotFound, err) {
 			c.JSON(400, gin.H{"error": "文件不存在"})
 			return
 		}
@@ -141,7 +140,7 @@ func (h *FileHandler) Restore(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	err = h.fileService.RestoreUserFile(c.Request.Context(), userID.(uint), uint(ID))
 	if err != nil {
-		if errors.Is(repository.ErrFileNotFound, err) {
+		if errors.Is(service.ErrFileNotFound, err) {
 			c.JSON(400, gin.H{"error": "文件不存在"})
 			return
 		}
@@ -150,4 +149,29 @@ func (h *FileHandler) Restore(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"message": "恢复成功"})
+}
+
+// PermanentlyDelete 永久删除回收站中的文件/文件夹
+func (h *FileHandler) PermanentlyDelete(c *gin.Context) {
+	IDString := c.Param("ID")
+	ID, err := strconv.ParseInt(IDString, 10, 64)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "无效的文件ID"})
+		logger.S.Infof("无效的文件id:%v", err)
+		return
+	}
+
+	userID, _ := c.Get("userID")
+	err = h.fileService.PermanentlyDeleteFile(c.Request.Context(), userID.(uint), uint(ID))
+	if err != nil {
+		if errors.Is(service.ErrFileNotFound, err) {
+			c.JSON(400, gin.H{"error": "文件不存在"})
+			return
+		}
+		c.JSON(500, gin.H{"error": "永久删除失败"})
+		logger.S.Errorf("永久删除文件失败：%v", err)
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "永久删除成功"})
 }

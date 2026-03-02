@@ -263,3 +263,5 @@ runtime.goexit
 {"level":"info","ts":"2026-02-26T15:12:31.374+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
 {"level":"error","ts":"2026-02-26T15:12:38.889+0800","caller":"api/file-handler.go:72","msg":"创建文件夹失败：父文件夹不合法: 无权访问该目录"}
 {"level":"info","ts":"2026-02-26T15:14:28.002+0800","caller":"api/file-handler.go:52","msg":"文件上传成功"}
+{"level":"info","ts":"2026-02-26T18:28:47.336+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"fatal","ts":"2026-02-26T18:57:11.191+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": Connection closed by foreign host http://127.0.0.1:9000/wedrive/?location=. Retry again.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}

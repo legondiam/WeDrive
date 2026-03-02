@@ -16,7 +16,7 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		if authorization == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Authorization header is required",
+				"error": "缺少Authorization",
 			})
 			c.Abort()
 			return
@@ -26,7 +26,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		//authorization格式不正确
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid Authorization header format",
+				"error": "Authorization格式不正确",
 			})
 			c.Abort()
 			return
