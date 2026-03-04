@@ -18,6 +18,7 @@ import (
 
 var ErrUserSpaceNotEnough = errors.New("用户空间不足")
 var ErrFileNotFound = errors.New("文件不存在")
+var ErrParentFolderInvalid = errors.New("父文件夹不合法")
 
 type FileService struct {
 	fileRepo *repository.FileRepo
@@ -40,7 +41,7 @@ type FileResp struct {
 	IsFolder  bool   `json:"is_folder"`
 	FileSize  string `json:"file_size"`
 	UpdatedAt string `json:"updated_at"`
-	ParentID  int64  `json:"parent_id"`
+	ParentID  uint   `json:"parent_id"`
 }
 
 func NewFileService(fileRepo *repository.FileRepo, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
@@ -48,32 +49,60 @@ func NewFileService(fileRepo *repository.FileRepo, userRepo *repository.UserRepo
 }
 
 // checkParentFolder 检查父文件夹是否合法
-func (s *FileService) checkParentFolder(ctx context.Context, userID uint, parentID int64) error {
+func (s *FileService) checkParentFolder(ctx context.Context, userID uint, parentID uint) error {
 	// 根目录合法
 	if parentID == 0 {
 		return nil
 	}
 	// 查文件夹是否存在
-	folder, err := s.fileRepo.GetFileByID(ctx, uint(parentID))
+	folder, err := s.fileRepo.GetFileByID(ctx, parentID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("父文件夹不存在")
+			return errors.WithMessage(ErrParentFolderInvalid, "父文件夹不存在")
 		}
 		return errors.WithMessage(err, "检查父文件夹失败")
 	}
 	// 检查归属权
 	if folder.UserId != userID {
-		return errors.New("无权访问该目录")
+		return errors.WithMessage(ErrParentFolderInvalid, "无权访问该目录")
 	}
 	// 检查是否为文件夹
 	if !folder.IsFolder {
-		return errors.New("目标不是文件夹")
+		return errors.WithMessage(ErrParentFolderInvalid, "目标不是文件夹")
+	}
+	return nil
+}
+
+// collectSubtreeIDs 收集子树ID
+func (s *FileService) collectSubtreeIDs(ctx context.Context, userID uint, parentID uint, ids *[]uint, visited map[uint]struct{}) error {
+	// 获取子文件列表
+	children, err := s.fileRepo.GetUserFileByParentID(ctx, userID, parentID)
+	if err != nil {
+		return errors.WithMessage(err, "获取子文件列表失败")
+	}
+	// 遍历子文件
+	for _, child := range children {
+		// 如果子文件已访问，跳过
+		if _, ok := visited[child.ID]; ok {
+			continue
+		}
+		// 标记子文件已访问
+		visited[child.ID] = struct{}{}
+
+		*ids = append(*ids, child.ID)
+		// 如果子文件是文件夹，递归收集子树ID
+		if child.IsFolder {
+			err := s.collectSubtreeIDs(ctx, userID, child.ID, ids, visited)
+			if err != nil {
+				return errors.WithMessage(err, "收集子树ID失败")
+			}
+		}
 	}
 	return nil
 }
 
 // UploadFile 上传文件
-func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.FileHeader, userID uint, parentID int64) error {
+func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.FileHeader, userID uint, parentID uint) error {
 	// 检查父文件夹
 	err := s.checkParentFolder(ctx, userID, parentID)
 	if err != nil {
@@ -175,9 +204,40 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	})
 }
 
-// DeleteFile 删除文件
+// DeleteFile 删除文件/文件夹
 func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID uint) error {
-	err := s.fileRepo.DeleteUserFile(ctx, userID, userFileID)
+	// 获取文件
+	root, err := s.fileRepo.GetFileByID(ctx, userFileID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrFileNotFound
+		}
+		return errors.WithMessage(err, "获取文件失败")
+	}
+	// 删除文件夹
+	if root.IsFolder {
+		ids := make([]uint, 0, 16)
+		ids = append(ids, userFileID) // 添加根文件ID
+
+		visited := make(map[uint]struct{}, 16)
+		visited[userFileID] = struct{}{} // 标记根文件已访问
+		// 收集子树ID
+		err := s.collectSubtreeIDs(ctx, userID, userFileID, &ids, visited)
+		if err != nil {
+			return errors.WithMessage(err, "收集子树ID失败")
+		}
+		// 删除子文件
+		err = s.fileRepo.DeleteUserFileByIDs(ctx, userID, ids)
+		if err != nil {
+			if errors.Is(repository.ErrFileNotFound, err) {
+				return ErrFileNotFound
+			}
+			return errors.WithMessage(err, "删除子文件失败")
+		}
+		return nil
+	}
+	// 删除文件
+	err = s.fileRepo.DeleteUserFile(ctx, userID, userFileID)
 	if err != nil {
 		if errors.Is(repository.ErrFileNotFound, err) {
 			return ErrFileNotFound
@@ -188,7 +248,7 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 }
 
 // GetUserFile 获取用户文件列表
-func (s *FileService) GetUserFile(ctx context.Context, userID uint, parentID int64) ([]FileResp, error) {
+func (s *FileService) GetUserFile(ctx context.Context, userID uint, parentID uint) ([]FileResp, error) {
 	// 检查父文件夹
 	err := s.checkParentFolder(ctx, userID, parentID)
 	if err != nil {
@@ -220,7 +280,7 @@ func (s *FileService) GetUserFile(ctx context.Context, userID uint, parentID int
 }
 
 // CreateFolder 创建文件夹
-func (s *FileService) CreateFolder(ctx context.Context, userID uint, parentID int64, name string) error {
+func (s *FileService) CreateFolder(ctx context.Context, userID uint, parentID uint, name string) error {
 	// 检查父文件夹是否合法
 	if err := s.checkParentFolder(ctx, userID, parentID); err != nil {
 		return errors.WithMessage(err, "父文件夹不合法")

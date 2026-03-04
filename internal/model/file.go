@@ -17,7 +17,7 @@ type UserFile struct {
 	UserId      uint      `gorm:"index"`
 	FileStoreID *uint     `gorm:"index"`
 	FileName    string    `gorm:"type:varchar(255)"`
-	ParentID    int64     `gorm:"index;default:0"`
+	ParentID    uint      `gorm:"index;default:0"`
 	IsFolder    bool      `gorm:"default:false"`
 	FileStore   FileStore `gorm:"foreignKey:FileStoreID"`
 }

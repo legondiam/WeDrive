@@ -22,7 +22,6 @@ const (
 	// 文件模块
 	CodeUserSpaceNotEnough = 3001 // 用户空间不足
 	CodeFileNotFound       = 3002 // 文件不存在
-	CodeCreateFolderFailed = 3003 // 创建文件夹失败(业务失败)
 
 	// 服务端
 	CodeInternal = 5000 // 未分类服务端错误

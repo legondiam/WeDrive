@@ -28,19 +28,25 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	}
 	// 获取父文件夹ID
 	parentIDString := c.PostForm("parent_id")
-	var parentID int64
+	var parentID uint
 	if parentIDString != "" {
-		parentID, err = strconv.ParseInt(parentIDString, 10, 64)
+		var parsed uint64
+		parsed, err = strconv.ParseUint(parentIDString, 10, 64)
 		if err != nil {
 			response.BusinessError(c, response.CodeInvalidParentID, "parent_id无效")
 			return
 		}
+		parentID = uint(parsed)
 	}
 	// 获取用户ID
 	userID, _ := c.Get("userID")
 	// 上传文件
 	err = h.fileService.UploadFile(c.Request.Context(), fileHeader, userID.(uint), parentID)
 	if err != nil {
+		if errors.Is(service.ErrParentFolderInvalid, err) {
+			response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
+			return
+		}
 		if errors.Is(service.ErrUserSpaceNotEnough, err) {
 			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
 			return
@@ -57,7 +63,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 func (h *FileHandler) CreateFolder(c *gin.Context) {
 	type CreateFolderReq struct {
 		Name     string `json:"name" binding:"required"`
-		ParentID int64  `json:"parent_id"`
+		ParentID uint   `json:"parent_id"`
 	}
 	var req CreateFolderReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -103,13 +109,13 @@ func (h *FileHandler) Delete(c *gin.Context) {
 // GetUserFile 获取用户文件列表
 func (h *FileHandler) GetUserFile(c *gin.Context) {
 	parentIDString := c.Query("parent_id")
-	parentID, err := strconv.ParseInt(parentIDString, 10, 64)
+	parentID, err := strconv.ParseUint(parentIDString, 10, 64)
 	if err != nil {
 		response.BusinessError(c, response.CodeInvalidParentID, "parent_id无效")
 		return
 	}
 	userID, _ := c.Get("userID")
-	list, err := h.fileService.GetUserFile(c.Request.Context(), userID.(uint), parentID)
+	list, err := h.fileService.GetUserFile(c.Request.Context(), userID.(uint), uint(parentID))
 	if err != nil {
 		response.ServerError(c, "获取用户文件列表失败")
 		logger.S.Errorf("获取用户文件列表失败：%v", err)

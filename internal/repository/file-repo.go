@@ -3,6 +3,7 @@ package repository
 import (
 	"WeDrive/internal/model"
 	"context"
+
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -51,7 +52,17 @@ func (r *FileRepo) GetFileByID(ctx context.Context, ID uint) (*model.UserFile, e
 	return &file, errors.WithStack(err)
 }
 
-// DeleteUserFile 删除用户文件记录（软删除，进入回收站）
+// GetUserFileByParentID 根据父文件夹ID获取用户文件列表
+func (r *FileRepo) GetUserFileByParentID(ctx context.Context, userID uint, parentID uint) ([]model.UserFile, error) {
+	var list []model.UserFile
+	err := r.db.WithContext(ctx).
+		Select("id,parent_id,is_folder").
+		Where("user_id = ? AND parent_id = ?", userID, parentID).
+		Find(&list).Error
+	return list, errors.WithStack(err)
+}
+
+// DeleteUserFile 删除用户文件记录
 func (r *FileRepo) DeleteUserFile(ctx context.Context, userID uint, userFileID uint) error {
 	result := r.db.WithContext(ctx).Where("user_id = ? AND id = ?", userID, userFileID).Delete(&model.UserFile{})
 	if result.RowsAffected == 0 {
@@ -60,8 +71,20 @@ func (r *FileRepo) DeleteUserFile(ctx context.Context, userID uint, userFileID u
 	return errors.WithStack(result.Error)
 }
 
+// DeleteUserFileByIDs 批量删除用户文件记录
+func (r *FileRepo) DeleteUserFileByIDs(ctx context.Context, userID uint, ids []uint) error {
+	result := r.db.WithContext(ctx).Where("user_id = ? AND id IN (?)", userID, ids).Delete(&model.UserFile{})
+	if result.Error != nil {
+		return errors.WithStack(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrFileNotFound
+	}
+	return nil
+}
+
 // GetUserFile 获取用户文件列表
-func (r *FileRepo) GetUserFile(ctx context.Context, userID uint, parentID int64) ([]model.UserFile, error) {
+func (r *FileRepo) GetUserFile(ctx context.Context, userID uint, parentID uint) ([]model.UserFile, error) {
 	var list []model.UserFile
 	err := r.db.WithContext(ctx).
 		Select("id,file_name,is_folder,updated_at,file_store_id").

@@ -265,3 +265,17 @@ runtime.goexit
 {"level":"info","ts":"2026-02-26T15:14:28.002+0800","caller":"api/file-handler.go:52","msg":"文件上传成功"}
 {"level":"info","ts":"2026-02-26T18:28:47.336+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
 {"level":"fatal","ts":"2026-02-26T18:57:11.191+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": Connection closed by foreign host http://127.0.0.1:9000/wedrive/?location=. Retry again.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}
+{"level":"info","ts":"2026-03-04T22:16:37.656+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-04T22:16:58.222+0800","caller":"api/user-handler.go:73","msg":"用户登录成功。username:user1"}
+{"level":"info","ts":"2026-03-04T22:20:01.486+0800","caller":"api/file-handler.go:59","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-04T22:20:07.073+0800","caller":"api/file-handler.go:59","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-04T22:20:08.624+0800","caller":"api/file-handler.go:59","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-04T22:20:10.343+0800","caller":"api/file-handler.go:59","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-04T22:20:35.142+0800","caller":"api/file-handler.go:59","msg":"文件上传成功"}
+{"level":"error","ts":"2026-03-04T22:20:58.035+0800","caller":"api/file-handler.go:121","msg":"获取用户文件列表失败：父文件夹不合法: 无权访问该目录: 父文件夹不合法"}
+{"level":"info","ts":"2026-03-04T22:22:00.325+0800","caller":"api/file-handler.go:59","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-04T22:22:00.779+0800","caller":"api/file-handler.go:59","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-04T22:22:01.270+0800","caller":"api/file-handler.go:59","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-04T22:22:25.381+0800","caller":"api/file-handler.go:59","msg":"文件上传成功"}
+{"level":"error","ts":"2026-03-04T22:24:09.956+0800","caller":"api/file-handler.go:121","msg":"获取用户文件列表失败：父文件夹不合法: 无权访问该目录: 父文件夹不合法"}
+{"level":"error","ts":"2026-03-04T22:27:16.865+0800","caller":"api/file-handler.go:121","msg":"获取用户文件列表失败：父文件夹不合法: 父文件夹不存在: 父文件夹不合法"}
