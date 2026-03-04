@@ -3,6 +3,7 @@ package api
 import (
 	"WeDrive/internal/service"
 	"WeDrive/pkg/logger"
+	"WeDrive/pkg/response"
 	"errors"
 	"strconv"
 
@@ -17,11 +18,12 @@ func NewFileHandler(fileService *service.FileService) *FileHandler {
 	return &FileHandler{fileService: fileService}
 }
 
+// Upload 上传文件
 func (h *FileHandler) Upload(c *gin.Context) {
 	// 获取上传的文件
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(400, gin.H{"error": "请上传文件"})
+		response.BusinessError(c, response.CodeMissingFile, "请上传文件")
 		return
 	}
 	// 获取父文件夹ID
@@ -30,7 +32,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	if parentIDString != "" {
 		parentID, err = strconv.ParseInt(parentIDString, 10, 64)
 		if err != nil {
-			c.JSON(400, gin.H{"error": "parent_id无效"})
+			response.BusinessError(c, response.CodeInvalidParentID, "parent_id无效")
 			return
 		}
 	}
@@ -40,14 +42,14 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	err = h.fileService.UploadFile(c.Request.Context(), fileHeader, userID.(uint), parentID)
 	if err != nil {
 		if errors.Is(service.ErrUserSpaceNotEnough, err) {
-			c.JSON(400, gin.H{"error": "用户空间不足"})
+			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
 			return
 		}
-		c.JSON(500, gin.H{"error": "上传失败"})
+		response.ServerError(c, "上传失败")
 		logger.S.Errorf("文件上传失败：%v", err)
 		return
 	}
-	c.JSON(200, gin.H{"message": "上传成功"})
+	response.Success(c, nil)
 	logger.S.Info("文件上传成功")
 }
 
@@ -59,7 +61,7 @@ func (h *FileHandler) CreateFolder(c *gin.Context) {
 	}
 	var req CreateFolderReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": "参数无效"})
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
 		return
 	}
 	// 默认父目录为根目录
@@ -67,12 +69,12 @@ func (h *FileHandler) CreateFolder(c *gin.Context) {
 
 	userID, _ := c.Get("userID")
 	if err := h.fileService.CreateFolder(c.Request.Context(), userID.(uint), parentID, req.Name); err != nil {
-		c.JSON(400, gin.H{"error": "创建文件夹失败"})
+		response.ServerError(c, "创建文件夹失败")
 		logger.S.Errorf("创建文件夹失败：%v", err)
 		return
 	}
 
-	c.JSON(200, gin.H{"message": "创建成功"})
+	response.Success(c, nil)
 }
 
 // Delete 删除文件
@@ -80,7 +82,7 @@ func (h *FileHandler) Delete(c *gin.Context) {
 	IDString := c.Param("ID")
 	ID, err := strconv.ParseInt(IDString, 10, 64)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "无效的文件ID"})
+		response.BusinessError(c, response.CodeInvalidFileID, "无效的文件ID")
 		logger.S.Infof("无效的文件id:%v", err)
 		return
 	}
@@ -88,14 +90,14 @@ func (h *FileHandler) Delete(c *gin.Context) {
 	err = h.fileService.DeleteFile(c.Request.Context(), userID.(uint), uint(ID))
 	if err != nil {
 		if errors.Is(service.ErrFileNotFound, err) {
-			c.JSON(400, gin.H{"error": "文件不存在"})
+			response.BusinessError(c, response.CodeFileNotFound, "文件不存在")
 			return
 		}
-		c.JSON(500, gin.H{"error": "删除失败"})
+		response.ServerError(c, "删除失败")
 		logger.S.Errorf("文件删除失败：%v", err)
 		return
 	}
-	c.JSON(200, gin.H{"message": "删除成功"})
+	response.Success(c, nil)
 }
 
 // GetUserFile 获取用户文件列表
@@ -103,17 +105,17 @@ func (h *FileHandler) GetUserFile(c *gin.Context) {
 	parentIDString := c.Query("parent_id")
 	parentID, err := strconv.ParseInt(parentIDString, 10, 64)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "parent_id无效"})
+		response.BusinessError(c, response.CodeInvalidParentID, "parent_id无效")
 		return
 	}
 	userID, _ := c.Get("userID")
 	list, err := h.fileService.GetUserFile(c.Request.Context(), userID.(uint), parentID)
 	if err != nil {
-		c.JSON(500, gin.H{"error": "获取用户文件列表失败"})
+		response.ServerError(c, "获取用户文件列表失败")
 		logger.S.Errorf("获取用户文件列表失败：%v", err)
 		return
 	}
-	c.JSON(200, gin.H{"data": list})
+	response.Success(c, list)
 }
 
 // ListRecycleBin 回收站列表
@@ -121,11 +123,11 @@ func (h *FileHandler) ListRecycleBin(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	list, err := h.fileService.ListRecycleBin(c.Request.Context(), userID.(uint))
 	if err != nil {
-		c.JSON(500, gin.H{"error": "获取回收站列表失败"})
+		response.ServerError(c, "获取回收站列表失败")
 		logger.S.Errorf("获取回收站列表失败：%v", err)
 		return
 	}
-	c.JSON(200, gin.H{"data": list})
+	response.Success(c, list)
 }
 
 // Restore 从回收站恢复文件
@@ -133,7 +135,7 @@ func (h *FileHandler) Restore(c *gin.Context) {
 	IDString := c.Param("ID")
 	ID, err := strconv.ParseInt(IDString, 10, 64)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "无效的文件ID"})
+		response.BusinessError(c, response.CodeInvalidFileID, "无效的文件ID")
 		logger.S.Infof("无效的文件id:%v", err)
 		return
 	}
@@ -141,14 +143,14 @@ func (h *FileHandler) Restore(c *gin.Context) {
 	err = h.fileService.RestoreUserFile(c.Request.Context(), userID.(uint), uint(ID))
 	if err != nil {
 		if errors.Is(service.ErrFileNotFound, err) {
-			c.JSON(400, gin.H{"error": "文件不存在"})
+			response.BusinessError(c, response.CodeFileNotFound, "文件不存在")
 			return
 		}
-		c.JSON(500, gin.H{"error": "恢复失败"})
+		response.ServerError(c, "恢复失败")
 		logger.S.Errorf("恢复文件失败：%v", err)
 		return
 	}
-	c.JSON(200, gin.H{"message": "恢复成功"})
+	response.Success(c, nil)
 }
 
 // PermanentlyDelete 永久删除回收站中的文件/文件夹
@@ -156,7 +158,7 @@ func (h *FileHandler) PermanentlyDelete(c *gin.Context) {
 	IDString := c.Param("ID")
 	ID, err := strconv.ParseInt(IDString, 10, 64)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "无效的文件ID"})
+		response.BusinessError(c, response.CodeInvalidFileID, "无效的文件ID")
 		logger.S.Infof("无效的文件id:%v", err)
 		return
 	}
@@ -165,13 +167,13 @@ func (h *FileHandler) PermanentlyDelete(c *gin.Context) {
 	err = h.fileService.PermanentlyDeleteFile(c.Request.Context(), userID.(uint), uint(ID))
 	if err != nil {
 		if errors.Is(service.ErrFileNotFound, err) {
-			c.JSON(400, gin.H{"error": "文件不存在"})
+			response.BusinessError(c, response.CodeFileNotFound, "文件不存在")
 			return
 		}
-		c.JSON(500, gin.H{"error": "永久删除失败"})
+		response.ServerError(c, "永久删除失败")
 		logger.S.Errorf("永久删除文件失败：%v", err)
 		return
 	}
 
-	c.JSON(200, gin.H{"message": "永久删除成功"})
+	response.Success(c, nil)
 }
