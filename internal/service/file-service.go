@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"path"
+	"time"
 
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
@@ -44,6 +45,11 @@ type FileResp struct {
 	ParentID  uint   `json:"parent_id"`
 }
 
+type DownloadFileResp struct {
+	URL      string `json:"url"`
+	FileName string `json:"file_name"`
+}
+
 func NewFileService(fileRepo *repository.FileRepo, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
 	return &FileService{fileRepo: fileRepo, storage: storage, db: db, userRepo: userRepo}
 }
@@ -55,7 +61,7 @@ func (s *FileService) checkParentFolder(ctx context.Context, userID uint, parent
 		return nil
 	}
 	// 查文件夹是否存在
-	folder, err := s.fileRepo.GetFileByID(ctx, parentID)
+	folder, err := s.fileRepo.GetFileByID(ctx, parentID, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.WithMessage(ErrParentFolderInvalid, "父文件夹不存在")
@@ -207,7 +213,7 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 // DeleteFile 删除文件/文件夹
 func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID uint) error {
 	// 获取文件
-	root, err := s.fileRepo.GetFileByID(ctx, userFileID)
+	root, err := s.fileRepo.GetFileByID(ctx, userFileID, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrFileNotFound
@@ -400,4 +406,20 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 	}
 
 	return nil
+}
+
+// GetDownloadURL 获取下载URL
+func (s *FileService) GetDownloadURL(ctx context.Context, userID uint, userFileID uint) (DownloadFileResp, error) {
+	file, err := s.fileRepo.GetFileStoreByID(ctx, userFileID, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return DownloadFileResp{}, ErrFileNotFound
+		}
+		return DownloadFileResp{}, errors.WithMessage(err, "获取文件失败")
+	}
+	url, err := s.storage.DownloadFile(ctx, file.FileAddr, 15*time.Minute)
+	if err != nil {
+		return DownloadFileResp{}, errors.WithMessage(err, "下载URL获取失败")
+	}
+	return DownloadFileResp{URL: url, FileName: file.FileName}, nil
 }

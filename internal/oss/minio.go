@@ -3,9 +3,11 @@ package oss
 import (
 	"WeDrive/internal/config"
 	"context"
+	"io"
+	"time"
+
 	"github.com/minio/minio-go/v7"
 	"github.com/pkg/errors"
-	"io"
 )
 
 type Storage struct {
@@ -32,4 +34,13 @@ func (s *Storage) DeleteFile(ctx context.Context, objectName string) error {
 		return errors.WithStack(err)
 	}
 	return nil
+}
+
+// DownloadFile 下载文件
+func (s *Storage) DownloadFile(ctx context.Context, objectName string, expiration time.Duration) (string, error) {
+	url, err := s.client.PresignedGetObject(ctx, config.GlobalConf.Minio.BucketName, objectName, expiration, nil)
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+	return url.String(), nil
 }

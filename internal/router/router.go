@@ -27,6 +27,7 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler) *gin.
 		privateGroup.POST("/file/restore/:ID", fileHandler.Restore)
 
 		privateGroup.GET("/user/info", userHandler.GetUserInfo)
+		privateGroup.GET("/file/download/:ID", fileHandler.GetDownloadURL)
 	}
 	return r
 }

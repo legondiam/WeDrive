@@ -45,11 +45,34 @@ func (r *FileRepo) GetFileByHash(ctx context.Context, hash string) (*model.FileS
 	return &fileStore, errors.WithStack(err)
 }
 
-// GetFileByID 根据文件ID获取文件
-func (r *FileRepo) GetFileByID(ctx context.Context, ID uint) (*model.UserFile, error) {
+// GetFileByID 根据文件ID获取用户文件
+func (r *FileRepo) GetFileByID(ctx context.Context, ID uint, userID uint) (*model.UserFile, error) {
 	var file model.UserFile
-	err := r.db.WithContext(ctx).Where("id = ?", ID).First(&file).Error
+	err := r.db.WithContext(ctx).Where("id = ? AND user_id = ?", ID, userID).First(&file).Error
 	return &file, errors.WithStack(err)
+}
+
+// GetFileStoreByID 根据文件ID获取文件池文件
+//
+//	func (r *FileRepo) GetFileStoreByID(ctx context.Context, ID uint,userID uint) (*model.UserFile, error) {
+//		var userFile model.UserFile
+//		err := r.db.WithContext(ctx).Where("id = ? AND user_id = ?", ID, userID).Preload("FileStore").First(&userFile).Error
+//		return &userFile, errors.WithStack(err)
+//	}
+func (r *FileRepo) GetFileStoreByID(ctx context.Context, ID uint, userID uint) (*model.FileStore, error) {
+	var fileStore model.FileStore
+	err := r.db.WithContext(ctx).
+		Table("file_stores").
+		Select("file_stores.*").
+		Joins("JOIN user_files ON user_files.file_store_id = file_stores.id").
+		Where("user_files.id = ?", ID).
+		Where("user_files.user_id = ?", userID).
+		Where("user_files.is_folder = ?", false).
+		Where("user_files.deleted_at IS NULL").
+		Where("file_stores.deleted_at IS NULL").
+		First(&fileStore).Error
+
+	return &fileStore, errors.WithStack(err)
 }
 
 // GetUserFileByParentID 根据父文件夹ID获取用户文件列表

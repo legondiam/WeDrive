@@ -86,7 +86,7 @@ func (h *FileHandler) CreateFolder(c *gin.Context) {
 // Delete 删除文件
 func (h *FileHandler) Delete(c *gin.Context) {
 	IDString := c.Param("ID")
-	ID, err := strconv.ParseInt(IDString, 10, 64)
+	ID, err := strconv.ParseUint(IDString, 10, 64)
 	if err != nil {
 		response.BusinessError(c, response.CodeInvalidFileID, "无效的文件ID")
 		logger.S.Infof("无效的文件id:%v", err)
@@ -139,7 +139,7 @@ func (h *FileHandler) ListRecycleBin(c *gin.Context) {
 // Restore 从回收站恢复文件
 func (h *FileHandler) Restore(c *gin.Context) {
 	IDString := c.Param("ID")
-	ID, err := strconv.ParseInt(IDString, 10, 64)
+	ID, err := strconv.ParseUint(IDString, 10, 64)
 	if err != nil {
 		response.BusinessError(c, response.CodeInvalidFileID, "无效的文件ID")
 		logger.S.Infof("无效的文件id:%v", err)
@@ -162,7 +162,7 @@ func (h *FileHandler) Restore(c *gin.Context) {
 // PermanentlyDelete 永久删除回收站中的文件/文件夹
 func (h *FileHandler) PermanentlyDelete(c *gin.Context) {
 	IDString := c.Param("ID")
-	ID, err := strconv.ParseInt(IDString, 10, 64)
+	ID, err := strconv.ParseUint(IDString, 10, 64)
 	if err != nil {
 		response.BusinessError(c, response.CodeInvalidFileID, "无效的文件ID")
 		logger.S.Infof("无效的文件id:%v", err)
@@ -182,4 +182,27 @@ func (h *FileHandler) PermanentlyDelete(c *gin.Context) {
 	}
 
 	response.Success(c, nil)
+}
+
+// GetDownloadURL 获取下载URL
+func (h *FileHandler) GetDownloadURL(c *gin.Context) {
+	IDString := c.Param("ID")
+	userID, _ := c.Get("userID")
+	ID, err := strconv.ParseUint(IDString, 10, 64)
+	if err != nil {
+		response.BusinessError(c, response.CodeInvalidFileID, "无效的文件ID")
+		logger.S.Infof("无效的文件id:%v", err)
+		return
+	}
+	downloadFileResp, err := h.fileService.GetDownloadURL(c.Request.Context(), userID.(uint), uint(ID))
+	if err != nil {
+		if errors.Is(err, service.ErrFileNotFound) {
+			response.BusinessError(c, response.CodeFileNotFound, "文件不存在")
+			return
+		}
+		response.ServerError(c, "获取下载URL失败")
+		logger.S.Errorf("获取下载URL失败：%v", err)
+		return
+	}
+	response.Success(c, downloadFileResp)
 }
