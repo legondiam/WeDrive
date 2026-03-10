@@ -23,6 +23,11 @@ const (
 	CodeUserSpaceNotEnough = 3001 // 用户空间不足
 	CodeFileNotFound       = 3002 // 文件不存在
 
+	// 分享模块
+	CodeShareNotFound   = 4001 // 分享不存在
+	CodeShareExpired    = 4002 // 分享已过期
+	CodeShareInvalidKey = 4003 // 分享密钥不正确
+
 	// 服务端
 	CodeInternal = 5000 // 未分类服务端错误
 )

@@ -284,3 +284,17 @@ runtime.goexit
 {"level":"info","ts":"2026-03-08T16:29:03.246+0800","caller":"api/user-handler.go:73","msg":"用户登录成功。username:user1"}
 {"level":"error","ts":"2026-03-08T16:29:19.356+0800","caller":"api/file-handler.go:121","msg":"获取用户文件列表失败：父文件夹不合法: 父文件夹不存在: 父文件夹不合法"}
 {"level":"error","ts":"2026-03-08T16:35:09.866+0800","caller":"api/file-handler.go:200","msg":"获取下载URL失败：文件不存在"}
+{"level":"info","ts":"2026-03-08T16:36:24.620+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-10T11:25:54.300+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-10T12:09:33.427+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-10T12:09:41.465+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-10T12:11:17.862+0800","caller":"api/user-handler.go:73","msg":"用户登录成功。username:user1"}
+{"level":"error","ts":"2026-03-10T12:14:26.477+0800","caller":"api/file-handler.go:121","msg":"获取用户文件列表失败：父文件夹不合法: 父文件夹不存在: 父文件夹不合法"}
+{"level":"info","ts":"2026-03-10T12:18:57.194+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-10T12:18:59.841+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-10T12:20:52.626+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-10T12:21:20.427+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-10T12:22:48.187+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-10T12:46:53.616+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-10T12:47:13.774+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-10T12:47:27.956+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}

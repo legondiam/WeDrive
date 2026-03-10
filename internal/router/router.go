@@ -7,13 +7,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler) *gin.Engine {
+func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, shareHandler *api.ShareHandler) *gin.Engine {
 	r := gin.Default()
 	publicGroup := r.Group("/api/v1")
 	{
 		publicGroup.POST("/user/register", userHandler.Register)
 		publicGroup.POST("/user/login", userHandler.Login)
 		publicGroup.POST("/user/refresh", userHandler.Refresh)
+
+		publicGroup.GET("/share/download", shareHandler.GetShareDownloadURL)
+
 	}
 	privateGroup := publicGroup.Group("/")
 	privateGroup.Use(middleware.AuthMiddleware())
@@ -28,6 +31,8 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler) *gin.
 
 		privateGroup.GET("/user/info", userHandler.GetUserInfo)
 		privateGroup.GET("/file/download/:ID", fileHandler.GetDownloadURL)
+
+		privateGroup.POST("/share/create", shareHandler.CreateShareFile)
 	}
 	return r
 }

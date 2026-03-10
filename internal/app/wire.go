@@ -9,6 +9,7 @@ import (
 	"WeDrive/internal/repository"
 	"WeDrive/internal/router"
 	"WeDrive/internal/service"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/wire"
 	"github.com/minio/minio-go/v7"
@@ -22,11 +23,14 @@ func BuildApp(db *gorm.DB, redis *redis.Client, minio *minio.Client) *gin.Engine
 		repository.NewUserRepo,
 		repository.NewUserCacheRepo,
 		repository.NewFileRepo,
+		repository.NewShareRepo,
 		oss.NewStorage,
 		service.NewUserService,
 		service.NewFileService,
+		service.NewShareService,
 		api.NewUserHandler,
 		api.NewFileHandler,
+		api.NewShareHandler,
 		router.NewRouter,
 	)
 	return nil

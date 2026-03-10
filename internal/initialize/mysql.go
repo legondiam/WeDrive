@@ -4,6 +4,7 @@ import (
 	"WeDrive/internal/config"
 	"WeDrive/internal/model"
 	"fmt"
+
 	"github.com/pkg/errors"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -29,6 +30,10 @@ func MysqlInit() (*gorm.DB, error) {
 		return nil, errors.WithStack(err)
 	}
 	err = dbconn.AutoMigrate(&model.UserFile{})
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	err = dbconn.AutoMigrate(&model.ShareFile{})
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

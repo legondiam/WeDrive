@@ -3,7 +3,9 @@ package oss
 import (
 	"WeDrive/internal/config"
 	"context"
+	"fmt"
 	"io"
+	"net/url"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -37,8 +39,13 @@ func (s *Storage) DeleteFile(ctx context.Context, objectName string) error {
 }
 
 // DownloadFile 下载文件
-func (s *Storage) DownloadFile(ctx context.Context, objectName string, expiration time.Duration) (string, error) {
-	url, err := s.client.PresignedGetObject(ctx, config.GlobalConf.Minio.BucketName, objectName, expiration, nil)
+func (s *Storage) DownloadFile(ctx context.Context, objectName string, fileName string, expiration time.Duration) (string, error) {
+	reqParams := make(url.Values)
+	if fileName != "" {
+		reqParams.Set("response-content-disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.QueryEscape(fileName)))
+		reqParams.Set("response-content-type", "application/octet-stream")
+	}
+	url, err := s.client.PresignedGetObject(ctx, config.GlobalConf.Minio.BucketName, objectName, expiration, reqParams)
 	if err != nil {
 		return "", errors.WithStack(err)
 	}

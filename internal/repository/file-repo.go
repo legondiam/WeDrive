@@ -59,20 +59,23 @@ func (r *FileRepo) GetFileByID(ctx context.Context, ID uint, userID uint) (*mode
 //		err := r.db.WithContext(ctx).Where("id = ? AND user_id = ?", ID, userID).Preload("FileStore").First(&userFile).Error
 //		return &userFile, errors.WithStack(err)
 //	}
-func (r *FileRepo) GetFileStoreByID(ctx context.Context, ID uint, userID uint) (*model.FileStore, error) {
-	var fileStore model.FileStore
+func (r *FileRepo) GetFileStoreByID(ctx context.Context, UserFileID uint, userID uint) (*model.FileStore, string, error) {
+	var row struct {
+		model.FileStore
+		FileName string
+	}
 	err := r.db.WithContext(ctx).
 		Table("file_stores").
-		Select("file_stores.*").
+		Select("file_stores.*,user_files.file_name").
 		Joins("JOIN user_files ON user_files.file_store_id = file_stores.id").
-		Where("user_files.id = ?", ID).
+		Where("user_files.id = ?", UserFileID).
 		Where("user_files.user_id = ?", userID).
 		Where("user_files.is_folder = ?", false).
 		Where("user_files.deleted_at IS NULL").
 		Where("file_stores.deleted_at IS NULL").
-		First(&fileStore).Error
+		First(&row).Error
 
-	return &fileStore, errors.WithStack(err)
+	return &row.FileStore, row.FileName, errors.WithStack(err)
 }
 
 // GetUserFileByParentID 根据父文件夹ID获取用户文件列表

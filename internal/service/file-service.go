@@ -410,16 +410,16 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 
 // GetDownloadURL 获取下载URL
 func (s *FileService) GetDownloadURL(ctx context.Context, userID uint, userFileID uint) (DownloadFileResp, error) {
-	file, err := s.fileRepo.GetFileStoreByID(ctx, userFileID, userID)
+	file, fileName, err := s.fileRepo.GetFileStoreByID(ctx, userFileID, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return DownloadFileResp{}, ErrFileNotFound
 		}
 		return DownloadFileResp{}, errors.WithMessage(err, "获取文件失败")
 	}
-	url, err := s.storage.DownloadFile(ctx, file.FileAddr, 15*time.Minute)
+	url, err := s.storage.DownloadFile(ctx, file.FileAddr, fileName, 15*time.Minute)
 	if err != nil {
 		return DownloadFileResp{}, errors.WithMessage(err, "下载URL获取失败")
 	}
-	return DownloadFileResp{URL: url, FileName: file.FileName}, nil
+	return DownloadFileResp{URL: url, FileName: fileName}, nil
 }
