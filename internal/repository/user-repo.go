@@ -3,6 +3,7 @@ package repository
 import (
 	"WeDrive/internal/model"
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
@@ -52,6 +53,20 @@ func (r *UserRepo) UpdateUserSpace(ctx context.Context, userID uint, delta int64
 		db = tx[0]
 	}
 	err := db.WithContext(ctx).Model(&model.User{}).Where("id = ?", userID).Update("used_space", gorm.Expr("used_space + ?", delta)).Error
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
+// UpdateUserMember 更新用户会员状态
+func (r *UserRepo) UpdateUserMember(ctx context.Context, userID uint, memberLevel int8, vipExpireAt *time.Time) error {
+	err := r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"member_level":  memberLevel,
+			"vip_expire_at": vipExpireAt,
+		}).Error
 	if err != nil {
 		return errors.WithStack(err)
 	}

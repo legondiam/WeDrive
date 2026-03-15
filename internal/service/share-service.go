@@ -101,7 +101,7 @@ func (s *ShareService) GetShareDownloadURL(ctx context.Context, token string, ke
 		return shareDownloadResp{}, errors.WithMessage(err, "获取文件失败")
 	}
 	//获取下载URL
-	url, err := s.storage.DownloadFile(ctx, fileStore.FileAddr, fileName, 15*time.Minute)
+	url, err := s.storage.DownloadFile(ctx, fileStore.FileAddr, fileName, 15*time.Minute, "free")
 	if err != nil {
 		return shareDownloadResp{}, errors.WithMessage(err, "获取下载URL失败")
 	}

@@ -139,3 +139,12 @@ func (s *UserService) GetUserInfo(ctx context.Context, userID uint) (*UserInfoRe
 	}
 	return userInfoResp, nil
 }
+
+// UpdateUserMember 更新用户会员状态
+func (s UserService) UpdateUserMember(ctx context.Context, userID uint, memberLevel int8, vipExpireAt *time.Time) error {
+	err := s.userRepo.UpdateUserMember(ctx, userID, memberLevel, vipExpireAt)
+	if err != nil {
+		return errors.WithMessage(err, "更新用户会员状态失败")
+	}
+	return nil
+}

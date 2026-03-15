@@ -107,6 +107,20 @@ func (s *FileService) collectSubtreeIDs(ctx context.Context, userID uint, parent
 	return nil
 }
 
+// checkUserMember 检查用户会员状态
+func (s *FileService) checkUserMember(user *model.User) string {
+	if user == nil {
+		return "free"
+	}
+	if user.MemberLevel == 0 {
+		return "free"
+	}
+	if user.VipExpireAt != nil && user.VipExpireAt.Before(time.Now()) {
+		return "free"
+	}
+	return "vip"
+}
+
 // UploadFile 上传文件
 func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.FileHeader, userID uint, parentID uint) error {
 	// 检查父文件夹
@@ -417,7 +431,14 @@ func (s *FileService) GetDownloadURL(ctx context.Context, userID uint, userFileI
 		}
 		return DownloadFileResp{}, errors.WithMessage(err, "获取文件失败")
 	}
-	url, err := s.storage.DownloadFile(ctx, file.FileAddr, fileName, 15*time.Minute)
+	//检查用户会员状态
+	user, err := s.userRepo.GetUserInfo(ctx, userID)
+	if err != nil {
+		return DownloadFileResp{}, errors.WithMessage(err, "获取用户信息失败")
+	}
+	tier := s.checkUserMember(user)
+
+	url, err := s.storage.DownloadFile(ctx, file.FileAddr, fileName, 15*time.Minute, tier)
 	if err != nil {
 		return DownloadFileResp{}, errors.WithMessage(err, "下载URL获取失败")
 	}

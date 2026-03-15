@@ -33,6 +33,8 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 		privateGroup.GET("/file/download/:ID", fileHandler.GetDownloadURL)
 
 		privateGroup.POST("/share/create", shareHandler.CreateShareFile)
+
+		privateGroup.POST("/user/update-member", userHandler.UpdateUserMember)
 	}
 	return r
 }

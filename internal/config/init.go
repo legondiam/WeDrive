@@ -1,9 +1,10 @@
 package config
 
 import (
+	"time"
+
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
-	"time"
 )
 
 type AppConf struct {
@@ -39,11 +40,16 @@ type MinioConf struct {
 	Location      string        `mapstructure:"location"`
 	UploadTimeout time.Duration `mapstructure:"upload_timeout"`
 }
+type DownloadConf struct {
+	PublicBaseURL string `mapstructure:"public_base_url"`
+	SignSecret    string `mapstructure:"sign_secret"`
+}
 type Conf struct {
-	App   AppConf   `mapstructure:"app"`
-	DB    DbConf    `mapstructure:"database"`
-	Jwt   JwtConf   `mapstructure:"jwt"`
-	Minio MinioConf `mapstructure:"minio"`
+	App      AppConf      `mapstructure:"app"`
+	DB       DbConf       `mapstructure:"database"`
+	Jwt      JwtConf      `mapstructure:"jwt"`
+	Minio    MinioConf    `mapstructure:"minio"`
+	Download DownloadConf `mapstructure:"download"`
 }
 
 var GlobalConf Conf

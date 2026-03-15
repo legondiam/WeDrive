@@ -23,7 +23,7 @@ func main() {
 	}
 
 	logger.S.Info("服务启动成功")
-	addr := fmt.Sprintf(":%d", config.GlobalConf.App.Port)
+	addr := fmt.Sprintf("0.0.0.0:%d", config.GlobalConf.App.Port)
 	r.Run(addr)
 
 }
