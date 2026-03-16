@@ -4,12 +4,15 @@ import (
 	"WeDrive/internal/api"
 	"WeDrive/internal/middleware"
 
+	"time"
+
 	"github.com/gin-gonic/gin"
 )
 
 func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, shareHandler *api.ShareHandler) *gin.Engine {
 	r := gin.Default()
 	publicGroup := r.Group("/api/v1")
+	publicGroup.Use(middleware.TimeoutMiddleware(3 * time.Second))
 	{
 		publicGroup.POST("/user/register", userHandler.Register)
 		publicGroup.POST("/user/login", userHandler.Login)
@@ -21,7 +24,7 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 	privateGroup := publicGroup.Group("/")
 	privateGroup.Use(middleware.AuthMiddleware())
 	{
-		privateGroup.POST("/file/upload", fileHandler.Upload)
+
 		privateGroup.POST("/file/upload-folder", fileHandler.CreateFolder)
 		privateGroup.GET("/file/list", fileHandler.GetUserFile)
 		privateGroup.DELETE("/file/delete/:ID", fileHandler.Delete)
@@ -34,6 +37,12 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 
 		privateGroup.POST("/share/create", shareHandler.CreateShareFile)
 
+	}
+
+	timeoutGroup := r.Group("/api/v1")
+	timeoutGroup.Use(middleware.TimeoutMiddleware(120 * time.Second))
+	{
+		timeoutGroup.POST("/file/upload", fileHandler.Upload)
 	}
 
 	adminGroup := privateGroup.Group("/admin")

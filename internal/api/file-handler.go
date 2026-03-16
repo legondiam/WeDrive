@@ -41,13 +41,14 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	// 获取用户ID
 	userID, _ := c.Get("userID")
 	// 上传文件
+
 	err = h.fileService.UploadFile(c.Request.Context(), fileHeader, userID.(uint), parentID)
 	if err != nil {
-		if errors.Is(service.ErrParentFolderInvalid, err) {
+		if errors.Is(err, service.ErrParentFolderInvalid) {
 			response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
 			return
 		}
-		if errors.Is(service.ErrUserSpaceNotEnough, err) {
+		if errors.Is(err, service.ErrUserSpaceNotEnough) {
 			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
 			return
 		}
@@ -95,7 +96,7 @@ func (h *FileHandler) Delete(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	err = h.fileService.DeleteFile(c.Request.Context(), userID.(uint), uint(ID))
 	if err != nil {
-		if errors.Is(service.ErrFileNotFound, err) {
+		if errors.Is(err, service.ErrFileNotFound) {
 			response.BusinessError(c, response.CodeFileNotFound, "文件不存在")
 			return
 		}
@@ -148,7 +149,7 @@ func (h *FileHandler) Restore(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	err = h.fileService.RestoreUserFile(c.Request.Context(), userID.(uint), uint(ID))
 	if err != nil {
-		if errors.Is(service.ErrFileNotFound, err) {
+		if errors.Is(err, service.ErrFileNotFound) {
 			response.BusinessError(c, response.CodeFileNotFound, "文件不存在")
 			return
 		}
@@ -172,7 +173,7 @@ func (h *FileHandler) PermanentlyDelete(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	err = h.fileService.PermanentlyDeleteFile(c.Request.Context(), userID.(uint), uint(ID))
 	if err != nil {
-		if errors.Is(service.ErrFileNotFound, err) {
+		if errors.Is(err, service.ErrFileNotFound) {
 			response.BusinessError(c, response.CodeFileNotFound, "文件不存在")
 			return
 		}
