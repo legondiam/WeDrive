@@ -34,7 +34,12 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 
 		privateGroup.POST("/share/create", shareHandler.CreateShareFile)
 
-		privateGroup.POST("/user/update-member", userHandler.UpdateUserMember)
+	}
+
+	adminGroup := privateGroup.Group("/admin")
+	adminGroup.Use(middleware.AdminMiddleware())
+	{
+		adminGroup.POST("/user/update-member", userHandler.UpdateUserMember)
 	}
 	return r
 }

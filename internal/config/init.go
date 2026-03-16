@@ -44,12 +44,16 @@ type DownloadConf struct {
 	PublicBaseURL string `mapstructure:"public_base_url"`
 	SignSecret    string `mapstructure:"sign_secret"`
 }
+type AdminConf struct {
+	UserIDs []uint `mapstructure:"userIDs"`
+}
 type Conf struct {
 	App      AppConf      `mapstructure:"app"`
 	DB       DbConf       `mapstructure:"database"`
 	Jwt      JwtConf      `mapstructure:"jwt"`
 	Minio    MinioConf    `mapstructure:"minio"`
 	Download DownloadConf `mapstructure:"download"`
+	Admin    AdminConf    `mapstructure:"admin"`
 }
 
 var GlobalConf Conf

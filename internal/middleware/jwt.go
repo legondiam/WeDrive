@@ -2,13 +2,15 @@ package middleware
 
 import (
 	"WeDrive/pkg/utils/jwts"
+	"net/http"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/pkg/errors"
-	"net/http"
-	"strings"
 )
 
+// AuthMiddleware 鉴权中间件
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//获取请求头的authorization字段

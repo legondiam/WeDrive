@@ -141,8 +141,20 @@ func (s *UserService) GetUserInfo(ctx context.Context, userID uint) (*UserInfoRe
 }
 
 // UpdateUserMember 更新用户会员状态
-func (s UserService) UpdateUserMember(ctx context.Context, userID uint, memberLevel int8, vipExpireAt *time.Time) error {
-	err := s.userRepo.UpdateUserMember(ctx, userID, memberLevel, vipExpireAt)
+func (s *UserService) UpdateUserMember(ctx context.Context, userID uint, memberLevel int8, vipMonths int) error {
+	//获取用户会员信息
+	user, err := s.userRepo.GetUserInfo(ctx, userID)
+	if err != nil {
+		return errors.WithMessage(err, "获取用户会员信息失败")
+	}
+	//计算会员到期时间
+	baseTime := time.Now()
+	if user.VipExpireAt != nil && user.VipExpireAt.After(baseTime) {
+		baseTime = *user.VipExpireAt
+	}
+	vipExpireAt := baseTime.AddDate(0, vipMonths, 0)
+	//更新用户会员状态
+	err = s.userRepo.UpdateUserMember(ctx, userID, memberLevel, &vipExpireAt)
 	if err != nil {
 		return errors.WithMessage(err, "更新用户会员状态失败")
 	}

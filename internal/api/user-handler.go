@@ -5,7 +5,6 @@ import (
 	"WeDrive/internal/service"
 	"WeDrive/pkg/logger"
 	"WeDrive/pkg/response"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
@@ -117,8 +116,9 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 func (h *UserHandler) UpdateUserMember(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	var req struct {
-		MemberLevel   int8   `json:"member_level" binding:"required"`
-		VipExpireTime string `json:"vip_expire_time" binding:"required"`
+		TargetUserID uint `json:"target_user_id" binding:"required"`
+		MemberLevel  int8 `json:"member_level" binding:"required"`
+		VipMonths    int  `json:"vip_months" binding:"required"`
 	}
 	//解析请求体
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -129,28 +129,18 @@ func (h *UserHandler) UpdateUserMember(c *gin.Context) {
 		response.BusinessError(c, response.CodeInvalidParam, "会员等级无效")
 		return
 	}
-	var vipExpireAt *time.Time
-	switch req.VipExpireTime {
-	case "1":
-		t := time.Now().AddDate(0, 1, 0)
-		vipExpireAt = &t
-	case "3":
-		t := time.Now().AddDate(0, 3, 0)
-		vipExpireAt = &t
-	case "12":
-		t := time.Now().AddDate(1, 0, 0)
-		vipExpireAt = &t
-	default:
+	if req.VipMonths != 1 && req.VipMonths != 3 && req.VipMonths != 12 {
 		response.BusinessError(c, response.CodeInvalidParam, "会员时长无效")
 		return
 	}
+
 	//更新用户会员状态
-	err := h.userService.UpdateUserMember(c.Request.Context(), userID.(uint), req.MemberLevel, vipExpireAt)
+	err := h.userService.UpdateUserMember(c.Request.Context(), req.TargetUserID, req.MemberLevel, req.VipMonths)
 	if err != nil {
 		response.ServerError(c, "更新用户会员状态失败")
 		logger.S.Errorf("更新用户会员状态失败：%+v", err)
 		return
 	}
 	response.Success(c, nil)
-	logger.S.Infof("更新用户会员状态成功，用户ID：%d，会员等级：%d，会员到期时间：%v", userID.(uint), req.MemberLevel, vipExpireAt)
+	logger.S.Infof("更新用户会员状态成功，用户ID：%d，会员等级：%d，会员续期时间：%d个月", userID.(uint), req.MemberLevel, req.VipMonths)
 }
