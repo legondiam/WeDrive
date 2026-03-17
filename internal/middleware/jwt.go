@@ -1,8 +1,8 @@
 package middleware
 
 import (
+	"WeDrive/pkg/response"
 	"WeDrive/pkg/utils/jwts"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -17,9 +17,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		authorization := c.GetHeader("Authorization")
 
 		if authorization == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "缺少Authorization",
-			})
+			response.BusinessError(c, response.CodeUnauthorized, "缺少Authorization")
 			c.Abort()
 			return
 		}
@@ -27,9 +25,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		parts := strings.SplitN(authorization, " ", 2)
 		//authorization格式不正确
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Authorization格式不正确",
-			})
+			response.BusinessError(c, response.CodeUnauthorized, "Authorization格式不正确")
 			c.Abort()
 			return
 		}
@@ -39,15 +35,11 @@ func AuthMiddleware() gin.HandlerFunc {
 		claims, err := jwts.ValidateToken(tokenString)
 		if err != nil {
 			if errors.Is(err, jwt.ErrTokenExpired) {
-				c.JSON(http.StatusUnauthorized, gin.H{
-					"error": "token已过期",
-				})
+				response.BusinessError(c, response.CodeUnauthorized, "token已过期")
 				c.Abort()
 				return
 			}
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "token无效",
-			})
+			response.BusinessError(c, response.CodeUnauthorized, "token无效")
 			c.Abort()
 			return
 		}

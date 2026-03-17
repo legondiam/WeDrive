@@ -13,6 +13,8 @@ const (
 	CodeMissingFile     = 1002 // 缺少上传文件
 	CodeInvalidParentID = 1003 // parent_id 无效
 	CodeInvalidFileID   = 1004 // 文件ID无效
+	CodeUnauthorized    = 1005 // 未授权
+	CodeForbidden       = 1006 // 禁止访问
 
 	// 用户模块
 	CodeUserExisted         = 2001 // 用户已存在

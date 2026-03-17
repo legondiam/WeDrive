@@ -298,3 +298,43 @@ runtime.goexit
 {"level":"info","ts":"2026-03-10T12:46:53.616+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
 {"level":"info","ts":"2026-03-10T12:47:13.774+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
 {"level":"info","ts":"2026-03-10T12:47:27.956+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-10T13:02:46.341+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-10T13:03:08.663+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-13T11:24:01.787+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-13T11:42:25.479+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-13T12:04:26.302+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T14:21:43.915+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T14:25:14.250+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T14:27:48.614+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T14:30:05.173+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T15:33:51.279+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T15:47:11.733+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T16:10:02.523+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T16:10:10.756+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T16:30:42.091+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T16:33:27.132+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T17:19:42.407+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T17:20:59.312+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T17:22:48.742+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T17:24:51.537+0800","caller":"api/user-handler.go:151","msg":"更新用户会员状态成功，用户ID：3，会员等级：67，会员到期时间：2026-04-15 17:24:51.5255083 +0800 CST"}
+{"level":"info","ts":"2026-03-15T17:24:58.919+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-15T17:25:30.466+0800","caller":"api/user-handler.go:155","msg":"更新用户会员状态成功，用户ID：3，会员等级：1，会员到期时间：2026-04-15 17:25:30.4582696 +0800 CST"}
+{"level":"info","ts":"2026-03-15T17:55:18.807+0800","caller":"api/user-handler.go:155","msg":"更新用户会员状态成功，用户ID：3，会员等级：1，会员到期时间：2026-04-15 17:55:18.7994131 +0800 CST"}
+{"level":"info","ts":"2026-03-15T18:08:38.969+0800","caller":"api/file-handler.go:59","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-16T17:06:46.273+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-16T17:09:12.797+0800","caller":"api/user-handler.go:73","msg":"用户登录成功。username:user1"}
+{"level":"info","ts":"2026-03-16T17:11:20.290+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-16T17:11:22.148+0800","caller":"api/user-handler.go:145","msg":"更新用户会员状态成功，用户ID：3，会员等级：1，会员续期时间：3个月"}
+{"level":"info","ts":"2026-03-16T17:12:22.093+0800","caller":"api/user-handler.go:145","msg":"更新用户会员状态成功，用户ID：3，会员等级：1，会员续期时间：1个月"}
+{"level":"info","ts":"2026-03-16T17:12:49.743+0800","caller":"api/user-handler.go:145","msg":"更新用户会员状态成功，用户ID：3，会员等级：1，会员续期时间：3个月"}
+{"level":"info","ts":"2026-03-16T17:44:59.680+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-16T18:35:47.540+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-16T18:35:57.632+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-16T18:36:16.135+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"fatal","ts":"2026-03-17T23:02:37.629+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": dial tcp 127.0.0.1:9000: connectex: No connection could be made because the target machine actively refused it.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}
+{"level":"info","ts":"2026-03-17T23:06:46.575+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-17T23:11:42.736+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-17T23:12:08.222+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-17T23:12:08.796+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-17T23:12:17.001+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-17T23:12:29.023+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
