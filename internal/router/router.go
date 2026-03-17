@@ -18,7 +18,7 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 		publicGroup.POST("/user/login", userHandler.Login)
 		publicGroup.POST("/user/refresh", userHandler.Refresh)
 
-		publicGroup.GET("/share/download", shareHandler.GetShareDownloadURL)
+		publicGroup.POST("/share/download", shareHandler.GetShareDownloadURL)
 
 	}
 	privateGroup := publicGroup.Group("/")
