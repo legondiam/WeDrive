@@ -286,7 +286,7 @@ func (s *FileService) GetUserFile(ctx context.Context, userID uint, parentID uin
 			ID:        f.ID,
 			FileName:  f.FileName,
 			IsFolder:  f.IsFolder,
-			UpdatedAt: f.UpdatedAt.Format("2006-01-02"),
+			UpdatedAt: f.UpdatedAt.Format("2006-01-02 15:04:05"),
 		}
 		// 判断是否为文件夹
 		if f.IsFolder {

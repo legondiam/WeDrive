@@ -41,6 +41,7 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 
 	timeoutGroup := r.Group("/api/v1")
 	timeoutGroup.Use(middleware.TimeoutMiddleware(120 * time.Second))
+	timeoutGroup.Use(middleware.AuthMiddleware())
 	{
 		timeoutGroup.POST("/file/upload", fileHandler.Upload)
 	}

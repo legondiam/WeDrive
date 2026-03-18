@@ -27,7 +27,7 @@
           <span class="file-meta">{{ row.is_folder ? '-' : row.file_size }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="删除时间" width="180" align="center">
+      <el-table-column label="删除日期" width="180" align="center">
         <template #default="{ row }">
           <span class="file-meta">{{ formatTime(row.deleted_at) }}</span>
         </template>
@@ -62,7 +62,7 @@ function formatTime(str) {
   if (!str) return '-'
   const d = new Date(str)
   const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 async function fetchRecycle() {
