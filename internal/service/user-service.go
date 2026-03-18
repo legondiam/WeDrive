@@ -126,6 +126,23 @@ func (s *UserService) RefreshToken(ctx context.Context, oldRefreshToken string) 
 	return accessToken, newRefreshToken, nil
 }
 
+// Logout 退出登录
+func (s *UserService) Logout(ctx context.Context, refreshToken string) error {
+	claims, err := jwts.ValidateToken(refreshToken)
+	if err != nil {
+		return nil
+	}
+	tokenID := claims.RegisteredClaims.ID
+	if tokenID == "" {
+		return nil
+	}
+	err = s.usercacheRepo.DeleteRefreshToken(ctx, tokenID)
+	if err != nil {
+		return errors.WithMessage(err, "删除refreshToken失败")
+	}
+	return nil
+}
+
 // GetUserInfo 获取用户信息
 func (s *UserService) GetUserInfo(ctx context.Context, userID uint) (*UserInfoResp, error) {
 	user, err := s.userRepo.GetUserInfo(ctx, userID)

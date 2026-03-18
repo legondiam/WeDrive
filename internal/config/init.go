@@ -49,6 +49,13 @@ type DownloadConf struct {
 type AdminConf struct {
 	UserIDs []uint `mapstructure:"userIDs"`
 }
+type CookieConf struct {
+	Domain   string `mapstructure:"domain"`
+	Path     string `mapstructure:"path"`
+	Secure   bool   `mapstructure:"secure"`
+	HttpOnly bool   `mapstructure:"http_only"`
+	SameSite string `mapstructure:"same_site"`
+}
 type Conf struct {
 	App      AppConf      `mapstructure:"app"`
 	DB       DbConf       `mapstructure:"database"`
@@ -56,6 +63,7 @@ type Conf struct {
 	Minio    MinioConf    `mapstructure:"minio"`
 	Download DownloadConf `mapstructure:"download"`
 	Admin    AdminConf    `mapstructure:"admin"`
+	Cookie   CookieConf   `mapstructure:"cookie"`
 }
 
 var GlobalConf Conf

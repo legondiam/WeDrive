@@ -44,6 +44,8 @@ func (h *UserHandler) Register(c *gin.Context) {
 	response.Success(c, nil)
 	logger.S.Info("用户注册成功。", "username:", req.Username)
 }
+
+// Login 登录
 func (h *UserHandler) Login(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required"`
@@ -68,9 +70,25 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 	//将refreshToken存入cookie
 	maxAge := int(config.GlobalConf.Jwt.RefreshTokenExpiration.Seconds())
-	c.SetCookie("refreshToken", refreshToken, maxAge, "/", "localhost", false, true)
+	c.SetCookie("refreshToken", refreshToken, maxAge, config.GlobalConf.Cookie.Path, config.GlobalConf.Cookie.Domain, config.GlobalConf.Cookie.Secure, config.GlobalConf.Cookie.HttpOnly)
 	response.Success(c, gin.H{"accessToken": accessToken})
 	logger.S.Info("用户登录成功。", "username:", req.Username)
+}
+
+// Logout 退出登录
+func (h *UserHandler) Logout(c *gin.Context) {
+	refreshToken, err := c.Cookie("refreshToken")
+	if err != nil {
+		logger.S.Infof("获取refreshToken失败：%+v", err)
+	}
+	if refreshToken != "" && err == nil {
+		err = h.userService.Logout(c.Request.Context(), refreshToken)
+		if err != nil {
+			logger.S.Warnf("删除refreshToken失败：%+v", err)
+		}
+	}
+	c.SetCookie("refreshToken", "", -1, config.GlobalConf.Cookie.Path, config.GlobalConf.Cookie.Domain, config.GlobalConf.Cookie.Secure, config.GlobalConf.Cookie.HttpOnly)
+	response.Success(c, nil)
 }
 
 // Refresh 刷新token
@@ -85,7 +103,7 @@ func (h *UserHandler) Refresh(c *gin.Context) {
 	accessToken, refreshToken, err := h.userService.RefreshToken(c.Request.Context(), oldRefreshToken)
 	if err != nil {
 		//清除cookie
-		c.SetCookie("refreshToken", "", -1, "/", "localhost", false, true)
+		c.SetCookie("refreshToken", "", -1, config.GlobalConf.Cookie.Path, config.GlobalConf.Cookie.Domain, config.GlobalConf.Cookie.Secure, config.GlobalConf.Cookie.HttpOnly)
 		if errors.Is(err, service.ErrTokenNotFound) {
 			response.BusinessError(c, response.CodeRefreshTokenMissing, "refreshToken不存在")
 			return
@@ -96,7 +114,7 @@ func (h *UserHandler) Refresh(c *gin.Context) {
 	}
 	//将新的refreshToken存入cookie
 	maxAge := int(config.GlobalConf.Jwt.RefreshTokenExpiration.Seconds())
-	c.SetCookie("refreshToken", refreshToken, maxAge, "/", "localhost", false, true)
+	c.SetCookie("refreshToken", refreshToken, maxAge, config.GlobalConf.Cookie.Path, config.GlobalConf.Cookie.Domain, config.GlobalConf.Cookie.Secure, config.GlobalConf.Cookie.HttpOnly)
 	response.Success(c, gin.H{"accessToken": accessToken})
 }
 
