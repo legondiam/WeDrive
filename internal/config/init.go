@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -65,12 +67,53 @@ func Init() error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
+
+	// 允许环境变量覆盖配置文件
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.AutomaticEnv()
+
+	// 显式绑定关键密钥
+	viper.MustBindEnv("database.mysql.password", "DATABASE_MYSQL_PASSWORD")
+	viper.MustBindEnv("database.redis.password", "DATABASE_REDIS_PASSWORD")
+	viper.MustBindEnv("minio.access_key", "MINIO_ACCESS_KEY")
+	viper.MustBindEnv("minio.secret_key", "MINIO_SECRET_KEY")
+	viper.MustBindEnv("jwt.SecretKey", "JWT_SECRET_KEY")
+	viper.MustBindEnv("download.sign_secret", "DOWNLOAD_SIGN_SECRET")
+
 	//解析配置
 	err = viper.Unmarshal(&GlobalConf)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	//fmt.Printf("Debug: 读取到的端口是 = %d\n", GlobalConf.DB.Mysql.Port)
 
+	if isProd() {
+		if err := validateSecrets(GlobalConf); err != nil {
+			return errors.WithMessage(err, "密钥验证失败")
+		}
+	}
+
+	return nil
+}
+
+// isProd 判断是否是生产环境
+func isProd() bool {
+	return strings.EqualFold(os.Getenv("APP_ENV"), "prod") ||
+		strings.EqualFold(os.Getenv("APP_ENV"), "production")
+}
+
+// validateSecrets 验证密钥
+func validateSecrets(c Conf) error {
+	if c.DB.Mysql.Password == "" {
+		return errors.New("缺少 DATABASE_MYSQL_PASSWORD")
+	}
+	if c.Minio.AccessKey == "" || c.Minio.SecretKey == "" {
+		return errors.New("缺少 MINIO_ACCESS_KEY / MINIO_SECRET_KEY")
+	}
+	if c.Jwt.SecretKey == "" {
+		return errors.New("缺少 JWT_SECRET_KEY")
+	}
+	if c.Download.SignSecret == "" {
+		return errors.New("缺少 DOWNLOAD_SIGN_SECRET")
+	}
 	return nil
 }
