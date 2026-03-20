@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 import router from '../router'
 
 const service = axios.create({
@@ -26,7 +26,7 @@ service.interceptors.response.use(
       if (res.code === 1005) {
         return tryRefreshToken(response.config)
       }
-      ElMessage.error(res.msg || '请求失败')
+      toast.error(res.msg || '请求失败')
       return Promise.reject(new Error(res.msg || '请求失败'))
     }
     return res
@@ -35,7 +35,7 @@ service.interceptors.response.use(
     if (error.response?.status === 401 || error.response?.data?.code === 1005) {
       return tryRefreshToken(error.config)
     }
-    ElMessage.error(error.message || '网络错误')
+    toast.error(error.message || '网络错误')
     return Promise.reject(error)
   }
 )

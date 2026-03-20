@@ -1,57 +1,52 @@
 <template>
-  <div class="admin">
-    <div class="page-header">
-      <h2>管理面板</h2>
-      <span class="page-desc">管理用户会员状态</span>
-    </div>
+  <div class="space-y-3">
+    <Card class="p-4">
+      <h2 class="text-[24px] font-semibold leading-[1.4] text-foreground">管理面板</h2>
+      <p class="mt-1 text-[14px] leading-[1.6] text-neutral-500">管理用户会员状态</p>
+    </Card>
 
-    <el-card class="admin-card" shadow="never">
-      <template #header>
-        <span>更新用户会员</span>
-      </template>
-      <el-form
-        ref="formRef"
-        :model="form"
-        :rules="rules"
-        label-width="120px"
-        style="max-width: 500px"
-      >
-        <el-form-item label="目标用户 ID" prop="target_user_id">
-          <el-input-number
-            v-model="form.target_user_id"
-            :min="1"
-            controls-position="right"
-          />
-        </el-form-item>
-        <el-form-item label="会员等级" prop="member_level">
-          <el-radio-group v-model="form.member_level">
-            <el-radio-button :value="0">普通用户</el-radio-button>
-            <el-radio-button :value="1">VIP</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="VIP 时长" prop="vip_months">
-          <el-radio-group v-model="form.vip_months" :disabled="form.member_level === 0">
-            <el-radio-button :value="1">1个月</el-radio-button>
-            <el-radio-button :value="3">3个月</el-radio-button>
-            <el-radio-button :value="12">12个月</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :loading="loading" @click="handleSubmit">
-            确认更新
-          </el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
+    <Card class="p-4">
+      <h3 class="text-[20px] font-semibold leading-[1.4] text-foreground">更新用户会员</h3>
+
+      <div class="mt-4 max-w-xl space-y-4">
+        <div class="space-y-1">
+          <label class="text-[12px] leading-[1.6] text-neutral-600">目标用户 ID</label>
+          <Input v-model="form.target_user_id" type="number" :min="1" placeholder="请输入用户 ID" />
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-[12px] leading-[1.6] text-neutral-600">会员等级</label>
+          <div class="flex gap-2">
+            <Button :variant="form.member_level === 0 ? 'default' : 'outline'" size="sm" @click="form.member_level = 0">普通用户</Button>
+            <Button :variant="form.member_level === 1 ? 'default' : 'outline'" size="sm" @click="form.member_level = 1">VIP</Button>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-[12px] leading-[1.6] text-neutral-600">VIP 时长</label>
+          <div class="flex gap-2">
+            <Button :variant="form.vip_months === 1 ? 'default' : 'outline'" size="sm" :disabled="form.member_level === 0" @click="form.vip_months = 1">1个月</Button>
+            <Button :variant="form.vip_months === 3 ? 'default' : 'outline'" size="sm" :disabled="form.member_level === 0" @click="form.vip_months = 3">3个月</Button>
+            <Button :variant="form.vip_months === 12 ? 'default' : 'outline'" size="sm" :disabled="form.member_level === 0" @click="form.vip_months = 12">12个月</Button>
+          </div>
+        </div>
+
+        <Button :disabled="loading" @click="handleSubmit">
+          {{ loading ? '更新中...' : '确认更新' }}
+        </Button>
+      </div>
+    </Card>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
+import Card from '@/components/ui/card/Card.vue'
+import Input from '@/components/ui/input/Input.vue'
+import Button from '@/components/ui/button/Button.vue'
 import { updateMember } from '../api/admin'
 
-const formRef = ref()
 const loading = ref(false)
 
 const form = reactive({
@@ -60,18 +55,20 @@ const form = reactive({
   vip_months: 1,
 })
 
-const rules = {
-  target_user_id: [{ required: true, message: '请输入用户 ID', trigger: 'blur' }],
-}
-
 async function handleSubmit() {
-  const valid = await formRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!form.target_user_id || Number(form.target_user_id) < 1) {
+    toast.warning('请输入正确的用户 ID')
+    return
+  }
 
   loading.value = true
   try {
-    await updateMember(form)
-    ElMessage.success('用户会员状态已更新')
+    await updateMember({
+      target_user_id: Number(form.target_user_id),
+      member_level: form.member_level,
+      vip_months: form.vip_months,
+    })
+    toast.success('用户会员状态已更新')
   } catch {
     /* handled */
   } finally {
@@ -79,29 +76,3 @@ async function handleSubmit() {
   }
 }
 </script>
-
-<style scoped>
-.admin {
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-.page-header {
-  margin-bottom: 20px;
-}
-
-.page-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.page-desc {
-  font-size: 13px;
-  color: var(--wd-text-secondary);
-}
-
-.admin-card {
-  border-radius: 8px;
-}
-</style>

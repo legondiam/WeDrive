@@ -1,56 +1,52 @@
 <template>
-  <div class="recycle">
-    <div class="page-header">
-      <h2>回收站</h2>
-      <span class="page-desc">已删除的文件将在此处保留，可恢复或永久删除</span>
-    </div>
+  <div class="space-y-3">
+    <Card class="p-4">
+      <h2 class="text-[24px] font-semibold leading-[1.4] text-foreground">回收站</h2>
+      <p class="mt-1 text-[14px] leading-[1.6] text-neutral-500">已删除的文件将在此处保留，可恢复或永久删除</p>
+    </Card>
 
-    <el-table
-      v-loading="loading"
-      :data="files"
-      class="file-table"
-      empty-text="回收站为空"
-    >
-      <el-table-column label="名称" min-width="300">
-        <template #default="{ row }">
-          <div class="file-name-cell">
-            <el-icon :size="22" :color="row.is_folder ? '#e6a23c' : '#909399'">
-              <Folder v-if="row.is_folder" />
-              <Document v-else />
-            </el-icon>
-            <span class="file-name">{{ row.file_name }}</span>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column label="大小" width="120" align="center">
-        <template #default="{ row }">
-          <span class="file-meta">{{ row.is_folder ? '-' : row.file_size }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="删除日期" width="180" align="center">
-        <template #default="{ row }">
-          <span class="file-meta">{{ formatTime(row.deleted_at) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="200" align="center" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="handleRestore(row)">
-            <el-icon><RefreshLeft /></el-icon>
-            恢复
-          </el-button>
-          <el-button link type="danger" size="small" @click="handlePermanentDelete(row)">
-            <el-icon><Delete /></el-icon>
-            彻底删除
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <Card class="overflow-hidden">
+      <div v-if="loading" class="p-6 text-center text-[14px] leading-[1.6] text-neutral-500">加载中...</div>
+      <div v-else-if="!files.length" class="p-6 text-center text-[14px] leading-[1.6] text-neutral-500">回收站为空</div>
+      <table v-else class="w-full border-collapse">
+        <thead class="bg-neutral-50">
+          <tr>
+            <th class="px-4 py-3 text-left text-[12px] font-medium leading-[1.6] text-neutral-600">名称</th>
+            <th class="px-4 py-3 text-center text-[12px] font-medium leading-[1.6] text-neutral-600">大小</th>
+            <th class="px-4 py-3 text-center text-[12px] font-medium leading-[1.6] text-neutral-600">删除日期</th>
+            <th class="px-4 py-3 text-right text-[12px] font-medium leading-[1.6] text-neutral-600">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in files" :key="row.id" class="border-t border-border hover:bg-neutral-50">
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2">
+                <Folder v-if="row.is_folder" class="h-4 w-4 text-neutral-600" />
+                <FileText v-else class="h-4 w-4 text-neutral-500" />
+                <span class="max-w-[360px] truncate text-[14px] font-medium leading-[1.6] text-neutral-900">{{ row.file_name }}</span>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-center text-[12px] leading-[1.6] text-neutral-500">{{ row.is_folder ? '-' : row.file_size }}</td>
+            <td class="px-4 py-3 text-center text-[12px] leading-[1.6] text-neutral-500">{{ formatTime(row.deleted_at) }}</td>
+            <td class="px-4 py-3">
+              <div class="flex items-center justify-end gap-1">
+                <Button variant="ghost" size="sm" @click="handleRestore(row)">恢复</Button>
+                <Button variant="ghost" size="sm" class="text-neutral-700" @click="handlePermanentDelete(row)">彻底删除</Button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </Card>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { toast } from 'vue-sonner'
+import { Folder, FileText } from 'lucide-vue-next'
+import Card from '@/components/ui/card/Card.vue'
+import Button from '@/components/ui/button/Button.vue'
 import { getRecycleList, restoreFile, permanentDeleteFile } from '../api/file'
 import { useUserStore } from '../stores/user'
 
@@ -76,74 +72,20 @@ async function fetchRecycle() {
 }
 
 async function handleRestore(row) {
-  try {
-    await restoreFile(row.id)
-    ElMessage.success(`「${row.file_name}」已恢复`)
-    fetchRecycle()
-    userStore.fetchUserInfo()
-  } catch {
-    /* handled */
-  }
+  await restoreFile(row.id)
+  toast.success(`「${row.file_name}」已恢复`)
+  fetchRecycle()
+  userStore.fetchUserInfo()
 }
 
 async function handlePermanentDelete(row) {
-  try {
-    await ElMessageBox.confirm(
-      `确定要彻底删除「${row.file_name}」吗？此操作不可恢复！`,
-      '彻底删除',
-      { confirmButtonText: '彻底删除', cancelButtonText: '取消', type: 'error' }
-    )
-    await permanentDeleteFile(row.id)
-    ElMessage.success('已彻底删除')
-    fetchRecycle()
-    userStore.fetchUserInfo()
-  } catch {
-    /* cancelled or error */
-  }
+  const ok = window.confirm(`确定要彻底删除「${row.file_name}」吗？此操作不可恢复！`)
+  if (!ok) return
+  await permanentDeleteFile(row.id)
+  toast.success('已彻底删除')
+  fetchRecycle()
+  userStore.fetchUserInfo()
 }
 
 onMounted(fetchRecycle)
 </script>
-
-<style scoped>
-.recycle {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.page-header {
-  margin-bottom: 20px;
-}
-
-.page-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.page-desc {
-  font-size: 13px;
-  color: var(--wd-text-secondary);
-}
-
-.file-table {
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.file-name-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.file-name {
-  font-size: 14px;
-  color: var(--wd-text);
-}
-
-.file-meta {
-  font-size: 13px;
-  color: var(--wd-text-secondary);
-}
-</style>
