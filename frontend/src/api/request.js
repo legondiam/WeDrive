@@ -35,8 +35,9 @@ service.interceptors.response.use(
     if (error.response?.status === 401 || error.response?.data?.code === 1005) {
       return tryRefreshToken(error.config)
     }
-    toast.error(error.message || '网络错误')
-    return Promise.reject(error)
+    const message = error.response?.data?.msg || error.message || '网络错误'
+    toast.error(message)
+    return Promise.reject(new Error(message))
   }
 )
 

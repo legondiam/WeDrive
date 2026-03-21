@@ -29,14 +29,29 @@ body {
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-size: 14px;
   line-height: 1.6;
+  cursor: default;
 }
 
 a {
   @apply text-foreground no-underline transition-colors;
+  cursor: pointer;
 }
 
 a:hover {
   @apply text-neutral-700;
+}
+
+button,
+[role='button'],
+label,
+summary {
+  cursor: default;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+  cursor: text;
 }
 
 .app-card {

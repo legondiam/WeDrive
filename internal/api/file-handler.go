@@ -42,7 +42,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	// 上传文件
 
-	err = h.fileService.UploadFile(c.Request.Context(), fileHeader, userID.(uint), parentID)
+	uploadedID, err := h.fileService.UploadFile(c.Request.Context(), fileHeader, userID.(uint), parentID)
 	if err != nil {
 		if errors.Is(err, service.ErrParentFolderInvalid) {
 			response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
@@ -56,8 +56,8 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		logger.S.Errorf("文件上传失败：%v", err)
 		return
 	}
-	response.Success(c, nil)
-	logger.S.Info("文件上传成功")
+	response.Success(c, gin.H{"id": uploadedID})
+	logger.S.Infof("文件上传成功。文件ID: %v", uploadedID)
 }
 
 // CreateFolder 创建文件夹

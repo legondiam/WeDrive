@@ -180,17 +180,17 @@ func (r *FileRepo) HardDeleteUserFile(ctx context.Context, userID uint, userFile
 	return nil
 }
 
-// CountUserFileByStoreID 统计未被软删除的用户文件引用数量
-func (r *FileRepo) CountUserFileByStoreID(ctx context.Context, fileStoreID uint, tx ...*gorm.DB) (int64, error) {
+// CountAllUserFileByStoreID 统计文件池记录的全部引用数量（包含回收站中的软删除记录）
+func (r *FileRepo) CountAllUserFileByStoreID(ctx context.Context, fileStoreID uint, tx ...*gorm.DB) (int64, error) {
 	db := r.db
 	if len(tx) > 0 && tx[0] != nil {
 		db = tx[0]
 	}
 
 	var count int64
-	err := db.WithContext(ctx).
+	err := db.WithContext(ctx).Unscoped().
 		Model(&model.UserFile{}).
-		Where("file_store_id = ? AND deleted_at IS NULL", fileStoreID).
+		Where("file_store_id = ?", fileStoreID).
 		Count(&count).Error
 	if err != nil {
 		return 0, errors.WithStack(err)

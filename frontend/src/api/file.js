@@ -4,13 +4,14 @@ export function getFileList(parentId = 0) {
   return request.get('/file/list', { params: { parent_id: parentId } })
 }
 
-export function uploadFile(file, parentId = 0, onProgress) {
+export function uploadFile(file, parentId = 0, onProgress, signal) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('parent_id', parentId)
   return request.post('/file/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: onProgress,
+    signal,
   })
 }
 

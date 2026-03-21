@@ -69,7 +69,12 @@ type Conf struct {
 var GlobalConf Conf
 
 func Init() error {
-	viper.SetConfigFile("config/config.yaml")
+	confPath := os.Getenv("CONFIG_PATH")
+	if confPath != "" {
+		viper.SetConfigFile(confPath)
+	} else {
+		viper.SetConfigFile("config/config.yaml")
+	}
 	//读取配置
 	err := viper.ReadInConfig()
 	if err != nil {

@@ -122,39 +122,42 @@ func (s *FileService) checkUserMember(user *model.User) string {
 }
 
 // UploadFile 上传文件
-func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.FileHeader, userID uint, parentID uint) error {
+func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.FileHeader, userID uint, parentID uint) (uint, error) {
 	// 检查父文件夹
 	err := s.checkParentFolder(ctx, userID, parentID)
 	if err != nil {
-		return errors.WithMessage(err, "父文件夹不合法")
+		return 0, errors.WithMessage(err, "父文件夹不合法")
 	}
 	// 检查用户空间
 	user, err := s.userRepo.GetUserInfo(ctx, userID)
 	if err != nil {
-		return errors.WithMessage(err, "获取用户信息失败")
+		return 0, errors.WithMessage(err, "获取用户信息失败")
 	}
 	if user.UsedSpace+fileHeader.Size > user.TotalSpace {
-		return ErrUserSpaceNotEnough
+		return 0, ErrUserSpaceNotEnough
 	}
 	// 计算文件hash
 	fileHash, err := hash.HashFile(fileHeader)
 	if err != nil {
-		return errors.WithMessage(err, "文件hash计算失败")
+		return 0, errors.WithMessage(err, "文件hash计算失败")
 	}
 	// 查询文件哈希
 	fileStore, err := s.fileRepo.GetFileByHash(ctx, fileHash)
 	// 秒传成功
 	if err == nil {
+		var uploadedID uint
 		err = s.db.Transaction(func(tx *gorm.DB) error {
-			err = s.fileRepo.CreateUserFile(ctx, &model.UserFile{
+			newUserFile := &model.UserFile{
 				UserId:      userID,
 				FileName:    fileHeader.Filename,
 				FileStoreID: &fileStore.ID,
 				ParentID:    parentID,
-			}, tx)
+			}
+			err = s.fileRepo.CreateUserFile(ctx, newUserFile, tx)
 			if err != nil {
 				return errors.WithMessage(err, "秒传文件存储失败")
 			}
+			uploadedID = newUserFile.ID
 			// 更新用户空间
 			err = s.userRepo.UpdateUserSpace(ctx, userID, fileHeader.Size, tx)
 			if err != nil {
@@ -162,16 +165,16 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 			}
 			return nil
 		})
-		return err
+		return uploadedID, err
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.WithMessage(err, "文件查询异常")
+		return 0, errors.WithMessage(err, "文件查询异常")
 	}
 
 	// 秒传失败, 正常上传
 	stream, err := fileHeader.Open()
 	if err != nil {
-		return errors.WithMessage(err, "文件打开失败")
+		return 0, errors.WithMessage(err, "文件打开失败")
 	}
 	defer stream.Close()
 
@@ -181,7 +184,7 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	// minio上传文件
 	err = s.storage.UploadFile(ctx, objectName, stream, fileHeader.Size)
 	if err != nil {
-		return errors.WithMessage(err, "上传云储存失败")
+		return 0, errors.WithMessage(err, "上传云储存失败")
 	}
 	// 若上传数据库失败，清理minio文件
 	shouldCleanMinio := true
@@ -191,7 +194,8 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		}
 	}()
 	// 开启数据库事务
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	var uploadedID uint
+	err = s.db.Transaction(func(tx *gorm.DB) error {
 		// 插入文件元数据
 		newFileStore := &model.FileStore{
 			FileHash: fileHash,
@@ -214,6 +218,7 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		if err != nil {
 			return errors.WithMessage(err, "用户文件数据存储失败")
 		}
+		uploadedID = newUserFile.ID
 		// 更新用户空间
 		err = s.userRepo.UpdateUserSpace(ctx, userID, fileHeader.Size, tx)
 		if err != nil {
@@ -222,6 +227,7 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		shouldCleanMinio = false
 		return nil
 	})
+	return uploadedID, err
 }
 
 // DeleteFile 删除文件/文件夹
@@ -394,8 +400,8 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 			return errors.WithMessage(err, "更新用户空间失败")
 		}
 
-		// 检查是否还有其他未删除引用
-		count, err := s.fileRepo.CountUserFileByStoreID(ctx, storeID, tx)
+		// 检查是否还有其他引用
+		count, err := s.fileRepo.CountAllUserFileByStoreID(ctx, storeID, tx)
 		if err != nil {
 			return errors.WithMessage(err, "统计文件引用数量失败")
 		}
@@ -411,8 +417,8 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 		return err
 	}
 
-	// 事务提交后，若没有其他引用，则尝试删除 MinIO 对象
-	count, err := s.fileRepo.CountUserFileByStoreID(ctx, storeID)
+	// 事务提交后，若已无任何引用，则尝试删除 MinIO 对象
+	count, err := s.fileRepo.CountAllUserFileByStoreID(ctx, storeID)
 	if err == nil && count == 0 {
 		if delErr := s.storage.DeleteFile(ctx, objectName); delErr != nil {
 			logger.S.Errorf("删除MinIO对象失败：%v", delErr)

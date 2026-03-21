@@ -30,29 +30,58 @@
             <td class="px-4 py-3 text-center text-[12px] leading-[1.6] text-neutral-500">{{ formatTime(row.deleted_at) }}</td>
             <td class="px-4 py-3">
               <div class="flex items-center justify-end gap-1">
-                <Button variant="ghost" size="sm" @click="handleRestore(row)">恢复</Button>
-                <Button variant="ghost" size="sm" class="text-neutral-700" @click="handlePermanentDelete(row)">彻底删除</Button>
+                <Button variant="ghost" size="sm" @click.stop.prevent="handleRestore(row)">恢复</Button>
+                <Button variant="ghost" size="sm" class="text-neutral-700" @click.stop.prevent="handlePermanentDelete(row)">彻底删除</Button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
     </Card>
+
+    <Dialog v-model:open="showPermanentDeleteDialog">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>彻底删除文件</DialogTitle>
+          <DialogDescription>
+            确定要彻底删除「{{ deleteTarget?.file_name }}」吗？此操作不可恢复。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose as-child>
+            <Button variant="outline">取消</Button>
+          </DialogClose>
+          <Button variant="destructive" :disabled="deleting" @click="confirmPermanentDelete">
+            {{ deleting ? '删除中...' : '确认删除' }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { Folder, FileText } from 'lucide-vue-next'
 import Card from '@/components/ui/card/Card.vue'
 import Button from '@/components/ui/button/Button.vue'
+import Dialog from '@/components/ui/dialog/Dialog.vue'
+import DialogContent from '@/components/ui/dialog/DialogContent.vue'
+import DialogHeader from '@/components/ui/dialog/DialogHeader.vue'
+import DialogTitle from '@/components/ui/dialog/DialogTitle.vue'
+import DialogDescription from '@/components/ui/dialog/DialogDescription.vue'
+import DialogFooter from '@/components/ui/dialog/DialogFooter.vue'
+import DialogClose from '@/components/ui/dialog/DialogClose.vue'
 import { getRecycleList, restoreFile, permanentDeleteFile } from '../api/file'
 import { useUserStore } from '../stores/user'
 
 const userStore = useUserStore()
 const loading = ref(false)
 const files = ref([])
+const showPermanentDeleteDialog = ref(false)
+const deleteTarget = ref(null)
+const deleting = ref(false)
 
 function formatTime(str) {
   if (!str) return '-'
@@ -78,14 +107,34 @@ async function handleRestore(row) {
   userStore.fetchUserInfo()
 }
 
-async function handlePermanentDelete(row) {
-  const ok = window.confirm(`确定要彻底删除「${row.file_name}」吗？此操作不可恢复！`)
-  if (!ok) return
-  await permanentDeleteFile(row.id)
-  toast.success('已彻底删除')
-  fetchRecycle()
-  userStore.fetchUserInfo()
+function handlePermanentDelete(row) {
+  deleteTarget.value = {
+    id: row.id,
+    file_name: row.file_name,
+  }
+  showPermanentDeleteDialog.value = true
+}
+
+async function confirmPermanentDelete() {
+  if (!deleteTarget.value) return
+  deleting.value = true
+  try {
+    await permanentDeleteFile(deleteTarget.value.id)
+    toast.success('已彻底删除')
+    showPermanentDeleteDialog.value = false
+    deleteTarget.value = null
+    fetchRecycle()
+    userStore.fetchUserInfo()
+  } finally {
+    deleting.value = false
+  }
 }
 
 onMounted(fetchRecycle)
+
+watch(showPermanentDeleteDialog, (open) => {
+  if (!open && !deleting.value) {
+    deleteTarget.value = null
+  }
+})
 </script>
