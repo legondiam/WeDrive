@@ -6,12 +6,17 @@ export const useUserStore = defineStore('user', () => {
   const totalSpace = ref('')
   const usedSpace = ref('')
   const username = ref('')
+  const isMember = ref(false)
+  const memberStatus = ref('非会员')
 
   async function fetchUserInfo() {
     try {
       const res = await getUserInfo()
+      username.value = res.data.Username || ''
       totalSpace.value = res.data.TotalSpace
       usedSpace.value = res.data.UsedSpace
+      isMember.value = Boolean(res.data.IsMember)
+      memberStatus.value = res.data.MemberStatus || (isMember.value ? '会员' : '非会员')
     } catch {
       /* ignore */
     }
@@ -37,7 +42,9 @@ export const useUserStore = defineStore('user', () => {
     totalSpace.value = ''
     usedSpace.value = ''
     username.value = ''
+    isMember.value = false
+    memberStatus.value = '非会员'
   }
 
-  return { totalSpace, usedSpace, username, fetchUserInfo, getUsagePercent, logout }
+  return { totalSpace, usedSpace, username, isMember, memberStatus, fetchUserInfo, getUsagePercent, logout }
 })

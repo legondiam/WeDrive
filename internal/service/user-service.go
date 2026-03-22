@@ -24,8 +24,11 @@ type UserService struct {
 }
 
 type UserInfoResp struct {
-	TotalSpace string
-	UsedSpace  string
+	Username     string
+	TotalSpace   string
+	UsedSpace    string
+	IsMember     bool
+	MemberStatus string
 }
 
 func NewUserService(userrepo *repository.UserRepo, usercacherepo *repository.UserCacheRepo) *UserService {
@@ -149,10 +152,15 @@ func (s *UserService) GetUserInfo(ctx context.Context, userID uint) (*UserInfoRe
 	if err != nil {
 		return nil, errors.WithMessage(err, "获取用户信息失败")
 	}
+	now := time.Now()
+	isMember := user.MemberLevel > 0 && user.VipExpireAt != nil && user.VipExpireAt.After(now)
 	//格式化返回数据
 	userInfoResp := &UserInfoResp{
-		TotalSpace: convert.FormatFileSize(user.TotalSpace),
-		UsedSpace:  convert.FormatFileSize(user.UsedSpace),
+		Username:     user.Username,
+		TotalSpace:   convert.FormatFileSize(user.TotalSpace),
+		UsedSpace:    convert.FormatFileSize(user.UsedSpace),
+		IsMember:     isMember,
+		MemberStatus: map[bool]string{true: "会员", false: "非会员"}[isMember],
 	}
 	return userInfoResp, nil
 }

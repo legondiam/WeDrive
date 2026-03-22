@@ -52,8 +52,13 @@
           </button>
           <div
             v-if="menuOpen"
-            class="absolute right-0 top-11 w-44 rounded-md border border-border bg-white p-1 shadow-md"
+            class="absolute right-0 top-11 w-52 rounded-md border border-border bg-white p-1 shadow-md"
           >
+            <div class="rounded-md px-3 py-2">
+              <p class="text-[12px] leading-[1.5] text-neutral-500">会员状态</p>
+              <p class="mt-0.5 text-[14px] font-medium leading-[1.6] text-neutral-900">{{ userStore.memberStatus }}</p>
+            </div>
+            <div class="my-1 h-px bg-neutral-200" />
             <button
               class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[14px] leading-[1.6] text-neutral-700 transition-colors hover:bg-neutral-100"
               @click="handleLogout"

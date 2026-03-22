@@ -1,17 +1,33 @@
 <template>
   <div class="landing-page min-h-screen bg-background text-foreground">
-    <header class="mx-auto flex w-full max-w-[1480px] items-center justify-between px-6 py-6 md:px-8 md:py-8 xl:px-12">
-      <RouterLink to="/" class="flex items-center gap-3">
-        <BrandCloudIcon class="h-9 w-9 text-slate-500" />
-        <span class="font-brand text-[24px] font-bold tracking-[-0.04em] text-zinc-900">WeDrive</span>
-      </RouterLink>
+    <header class="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[linear-gradient(180deg,#171717_0%,#141414_100%)] shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+      <div class="flex w-full items-center justify-between px-6 py-4 md:px-8 xl:px-10">
+        <RouterLink to="/" class="flex items-center gap-3">
+          <BrandCloudIcon class="h-8 w-8 text-white" />
+          <div class="flex flex-col">
+            <span class="font-brand text-[22px] font-bold tracking-[-0.04em] text-white">WeDrive</span>
+            <span class="text-[10px] font-medium uppercase tracking-[0.28em] text-white/40">
+              Open Source Private Cloud Drive
+            </span>
+          </div>
+        </RouterLink>
+      </div>
     </header>
 
-    <main class="mx-auto w-full max-w-[1480px] px-6 pb-12 pt-2 md:px-8 md:pb-16 xl:px-12">
+    <main class="mx-auto w-full max-w-[1480px] px-6 pb-12 pt-24 md:px-8 md:pb-16 md:pt-28 xl:px-12">
       <section class="poster-grid grid min-h-[calc(100vh-116px)] gap-8">
-        <div class="poster-copy flex min-h-[420px] flex-col justify-between rounded-[34px] border border-zinc-200/70 bg-white/78 p-7 shadow-[0_24px_80px_rgba(15,23,42,0.06)] backdrop-blur-sm md:p-10">
+        <div class="poster-copy flex min-h-[420px] flex-col justify-between rounded-[34px] border border-zinc-200/70 bg-white/92 p-7 shadow-[0_24px_80px_rgba(15,23,42,0.06)] md:p-10">
           <div class="max-w-[920px]">
-          <p class="text-[12px] font-medium uppercase tracking-[0.36em] text-slate-500">Private Cloud Drive</p>
+          <div class="flex flex-col gap-3">
+            <div>
+              <p class="font-brand text-[24px] font-bold tracking-[-0.05em] text-zinc-950 md:text-[30px]">
+                WeDrive
+              </p>
+              <p class="mt-1 text-[11px] font-medium uppercase tracking-[0.34em] text-slate-500 md:text-[12px]">
+                Open Source Private Cloud Drive
+              </p>
+            </div>
+          </div>
           <h1 class="mt-5 font-brand text-[58px] font-bold leading-[0.92] tracking-[-0.07em] text-zinc-950 md:text-[84px] lg:max-w-[860px] lg:text-[118px] xl:text-[132px]">
             <TextGenerateEffect
               as="span"
@@ -30,7 +46,7 @@
           </p>
           </div>
 
-          <div class="mt-10 flex flex-wrap items-center gap-3">
+          <div class="mt-10 flex flex-wrap items-center gap-3 isolate">
             <template v-if="!hasToken">
               <RouterLink
                 to="/login"
@@ -49,23 +65,23 @@
               v-else
               :as="RouterLink"
               to="/drive"
-              text="进入云盘"
-              class="border-zinc-300 bg-zinc-50 text-zinc-950 shadow-[0_18px_40px_rgba(15,23,42,0.12)] hover:border-zinc-400"
+              text="立即体验"
+              class="border-zinc-300 bg-zinc-50 text-zinc-950 hover:border-zinc-400"
             />
           </div>
 
           <div class="mt-12 grid gap-4 border-t border-zinc-200/90 pt-6 md:grid-cols-3">
             <div>
-              <p class="text-[12px] uppercase tracking-[0.24em] text-zinc-400">Stack</p>
-              <p class="mt-2 text-[16px] font-medium text-zinc-900">Go · Gin · MinIO · Redis</p>
+              <p class="text-[12px] uppercase tracking-[0.24em] text-zinc-400">Performance</p>
+              <p class="mt-2 text-[16px] font-medium text-zinc-900">并发稳定运行 / 响应保持轻快</p>
             </div>
             <div>
-              <p class="text-[12px] uppercase tracking-[0.24em] text-zinc-400">Focus</p>
-              <p class="mt-2 text-[16px] font-medium text-zinc-900">私有部署 / 快速分享 / 秒传</p>
+              <p class="text-[12px] uppercase tracking-[0.24em] text-zinc-400">Storage</p>
+              <p class="mt-2 text-[16px] font-medium text-zinc-900">S3 兼容 / 对象存储</p>
             </div>
             <div>
-              <p class="text-[12px] uppercase tracking-[0.24em] text-zinc-400">Tone</p>
-              <p class="mt-2 text-[16px] font-medium text-zinc-900">极简、冷静、偏产品</p>
+              <p class="text-[12px] uppercase tracking-[0.24em] text-zinc-400">Sharing</p>
+              <p class="mt-2 text-[16px] font-medium text-zinc-900">快速分享 / 秒传归档</p>
             </div>
           </div>
         </div>
@@ -78,7 +94,7 @@
             </div>
             <div class="mt-6 flex items-center justify-between gap-6">
               <div>
-                <h2 class="hero-title text-[28px] font-bold tracking-[-0.04em]">高并发请求引擎</h2>
+                <h2 class="hero-title text-[28px] font-bold tracking-[-0.04em]">高并发访问</h2>
                 <p class="mt-2 max-w-[360px] text-[14px] leading-[1.9] text-zinc-500">Go 并发，Gin 路由，响应保持轻快。</p>
               </div>
               <svg viewBox="0 0 2586 1024" aria-hidden="true" class="go-brand-mark">
@@ -87,7 +103,7 @@
               </svg>
             </div>
             <div class="code-visual mt-7" v-html="goCodeHtml" />
-            <p class="mt-6 max-w-[420px] text-[14px] leading-[1.9] text-zinc-500">多人同时上传、下载、分享时，依然保持响应稳定。</p>
+            <p class="mt-6 max-w-[420px] text-[14px] leading-[1.9] text-zinc-500">多人同时上传、下载、分享时，依然保持响应稳定。面向高频访问场景的轻量服务层。</p>
           </div>
 
           <div class="feature-stack grid gap-8">
@@ -111,7 +127,7 @@
                   </svg>
                 </div>
                 <p class="storage-copy text-[14px] leading-[1.9] text-zinc-500">
-                  S3 协议兼容。由 MinIO 驱动的工业级存储。
+                  S3 协议兼容。由 MinIO 驱动的工业级存储。适合承接文件上传、归档与长期管理。
                 </p>
               </div>
             </article>
@@ -119,16 +135,12 @@
             <article class="feature-panel flex h-full min-h-[360px] flex-col rounded-[34px] border border-zinc-200/80 bg-white/92 p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] md:p-8">
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-[12px] font-medium uppercase tracking-[0.28em] text-slate-500">Redis</p>
-                  <h2 class="mt-3 text-[28px] font-bold tracking-[-0.04em] text-zinc-900">秒传能力</h2>
+                  <p class="text-[12px] font-medium uppercase tracking-[0.28em] text-slate-500">Upload</p>
+                  <h2 class="mt-3 text-[28px] font-bold tracking-[-0.04em] text-zinc-900">秒传与快速入库</h2>
                 </div>
                 <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[12px] text-slate-600">Instant Upload</span>
               </div>
-              <p class="mt-4 max-w-[520px] text-[14px] leading-[1.9] text-zinc-500">
-                文件指纹进入缓存后，重复上传可直接命中记录，省掉重复传输，只保留确认与写入动作。
-              </p>
-
-              <div class="mt-10 rounded-[24px] border border-zinc-200 bg-zinc-50/80 p-5">
+              <div class="mt-8 rounded-[24px] border border-zinc-200 bg-zinc-50/80 p-5">
                 <div class="flex items-center justify-between text-[12px] uppercase tracking-[0.24em] text-zinc-500">
                   <span>Hash Match</span>
                   <span class="instant-chip">Hit</span>
@@ -136,26 +148,13 @@
                 <div class="mt-5 overflow-hidden rounded-full bg-zinc-200">
                   <div class="instant-bar h-3 rounded-full bg-[linear-gradient(90deg,#dc2626_0%,#ef4444_36%,#f87171_68%,#fee2e2_100%)]" />
                 </div>
-                <div class="mt-4 flex items-center justify-between text-[13px] text-zinc-500">
-                  <span>上传校验中</span>
-                  <span class="font-medium text-zinc-900">100%</span>
-                </div>
               </div>
-
-              <div class="mt-8 grid gap-3 md:grid-cols-3">
-                <div class="rounded-[22px] border border-zinc-200 bg-white px-4 py-4">
-                  <p class="text-[12px] uppercase tracking-[0.22em] text-zinc-400">Step 01</p>
-                  <p class="mt-2 text-[15px] font-medium text-zinc-900">计算文件指纹</p>
-                </div>
-                <div class="rounded-[22px] border border-zinc-200 bg-white px-4 py-4">
-                  <p class="text-[12px] uppercase tracking-[0.22em] text-zinc-400">Step 02</p>
-                  <p class="mt-2 text-[15px] font-medium text-zinc-900">Redis 快速命中</p>
-                </div>
-                <div class="rounded-[22px] border border-zinc-200 bg-white px-4 py-4">
-                  <p class="text-[12px] uppercase tracking-[0.22em] text-zinc-400">Step 03</p>
-                  <p class="mt-2 text-[15px] font-medium text-zinc-900">立即完成入库</p>
-                </div>
-              </div>
+              <p class="mt-4 max-w-[520px] text-[14px] leading-[1.9] text-zinc-500">
+                通过文件指纹命中缓存，减少重复传输，让重复上传更快完成确认与写入。
+              </p>
+              <p class="mt-3 max-w-[420px] text-[14px] leading-[1.9] text-zinc-500">
+                把重复文件处理成本降到更低。
+              </p>
             </article>
           </div>
         </div>
@@ -189,6 +188,22 @@ const goCodeHtml = `<pre class="shiki dark-plus" style="background-color:#0B0E14
     radial-gradient(circle at 8% 10%, rgba(148, 163, 184, 0.16), transparent 28%),
     radial-gradient(circle at 92% 18%, rgba(226, 232, 240, 0.88), transparent 26%),
     linear-gradient(135deg, #fcfcfd 0%, #f6f7f9 52%, #f2f4f7 100%);
+}
+
+.landing-page header,
+.landing-page h1,
+.landing-page h2,
+.landing-page .storage-mark,
+.landing-page .go-brand-mark,
+.landing-page .instant-bar,
+.landing-page .instant-chip,
+.landing-page .code-visual {
+  user-select: none;
+}
+
+.code-visual,
+.code-visual * {
+  user-select: text;
 }
 
 .poster-grid {
