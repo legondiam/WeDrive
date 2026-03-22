@@ -31,10 +31,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-black bg-black text-white hover:bg-neutral-700 hover:border-neutral-700 hover:shadow-md',
+        default: 'border-zinc-900 bg-zinc-900 text-white hover:border-zinc-800 hover:bg-zinc-800 hover:shadow-md',
         outline: 'border-border bg-white text-foreground hover:border-neutral-300 hover:bg-neutral-50',
         ghost: 'border-transparent bg-transparent text-foreground hover:bg-neutral-100',
-        destructive: 'border-neutral-700 bg-neutral-700 text-white hover:bg-neutral-900 hover:border-neutral-900',
+        destructive: 'border-zinc-700 bg-zinc-700 text-white hover:border-zinc-800 hover:bg-zinc-800',
         secondary: 'border-border bg-neutral-100 text-foreground hover:bg-neutral-200',
         link: 'border-transparent p-0 text-foreground underline-offset-4 hover:underline',
       },

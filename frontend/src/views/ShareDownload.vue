@@ -1,8 +1,8 @@
 <template>
   <div class="flex min-h-screen items-center justify-center bg-background p-6">
     <Card class="w-full max-w-[440px] p-8 text-center">
-      <Cloud class="mx-auto h-10 w-10 text-foreground" />
-      <h1 class="mt-3 text-[24px] font-semibold leading-[1.4] text-foreground">WeDrive 文件分享</h1>
+      <BrandCloudIcon class="mx-auto h-12 w-12 text-slate-500" />
+      <h1 class="mt-3 text-[24px] font-bold leading-[1.2] text-zinc-900">WeDrive 文件分享</h1>
 
       <form v-if="!downloadReady" class="mt-6 space-y-3" @submit.prevent="handleGetFile">
         <Input
@@ -20,8 +20,8 @@
 
       <div v-else class="mt-6 space-y-3">
         <CheckCircle2 class="mx-auto h-10 w-10 text-foreground" />
-        <h2 class="break-all text-[20px] font-semibold leading-[1.4] text-foreground">{{ fileName }}</h2>
-        <p class="text-[14px] leading-[1.6] text-neutral-500">文件已就绪，点击下方按钮下载</p>
+        <h2 class="break-all text-[22px] font-bold leading-[1.25] text-zinc-900">{{ fileName }}</h2>
+        <p class="text-[14px] leading-[1.6] text-zinc-500">文件已就绪，点击下方按钮下载</p>
         <Button class="w-full" @click="doDownload">
           <Download class="h-4 w-4" />
           下载文件
@@ -39,10 +39,11 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { Cloud, Download, CheckCircle2 } from 'lucide-vue-next'
+import { Download, CheckCircle2 } from 'lucide-vue-next'
 import Card from '@/components/ui/card/Card.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Button from '@/components/ui/button/Button.vue'
+import BrandCloudIcon from '@/components/icons/BrandCloudIcon.vue'
 import { downloadShare } from '../api/share'
 
 const route = useRoute()

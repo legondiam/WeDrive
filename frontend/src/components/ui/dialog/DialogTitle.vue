@@ -3,7 +3,7 @@ import { DialogTitle } from 'radix-vue'
 </script>
 
 <template>
-  <DialogTitle class="text-[20px] font-semibold leading-[1.4] text-foreground">
+  <DialogTitle class="text-[22px] font-bold leading-[1.25] text-zinc-900">
     <slot />
   </DialogTitle>
 </template>

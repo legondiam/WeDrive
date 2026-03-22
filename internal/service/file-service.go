@@ -165,6 +165,7 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 			}
 			return nil
 		})
+		logger.S.Infof("秒传成功, fileHash: %s, userID: %d, parentID: %d", fileHash, userID, parentID)
 		return uploadedID, err
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {

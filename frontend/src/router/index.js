@@ -2,6 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   {
+    path: '/',
+    name: 'Landing',
+    component: () => import('../views/Landing.vue'),
+    meta: { guest: true, allowAuthed: true },
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('../views/Login.vue'),
@@ -20,7 +26,7 @@ const routes = [
     meta: { guest: true },
   },
   {
-    path: '/',
+    path: '/drive',
     component: () => import('../components/AppLayout.vue'),
     meta: { auth: true },
     children: [
@@ -52,8 +58,8 @@ router.beforeEach((to, _from, next) => {
   const token = localStorage.getItem('accessToken')
   if (to.meta.auth && !token) {
     next('/login')
-  } else if (to.meta.guest && token && to.name !== 'ShareDownload') {
-    next('/')
+  } else if (to.meta.guest && token && !to.meta.allowAuthed && to.name !== 'ShareDownload') {
+    next('/drive')
   } else {
     next()
   }

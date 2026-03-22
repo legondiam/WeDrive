@@ -362,3 +362,118 @@ runtime.goexit
 {"level":"info","ts":"2026-03-19T17:25:45.214+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
 {"level":"info","ts":"2026-03-19T18:00:08.265+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
 {"level":"info","ts":"2026-03-20T22:38:23.417+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-21T15:32:59.200+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-21T15:35:16.417+0800","caller":"api/file-handler.go:60","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-21T15:36:12.161+0800","caller":"api/file-handler.go:60","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-21T15:43:23.021+0800","caller":"api/file-handler.go:60","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-21T16:01:39.758+0800","caller":"api/file-handler.go:60","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-21T16:09:20.360+0800","caller":"api/file-handler.go:60","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-21T16:10:59.636+0800","caller":"api/file-handler.go:60","msg":"文件上传成功"}
+{"level":"error","ts":"2026-03-21T16:15:05.817+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:06.817+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:07.310+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:07.753+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:10.946+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:11.528+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:11.672+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:11.810+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:12.262+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:12.688+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:13.170+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:13.720+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:27.417+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:15:28.150+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:17:07.794+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:17:08.477+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:17:08.751+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"error","ts":"2026-03-21T16:17:11.142+0800","caller":"api/file-handler.go:181","msg":"永久删除文件失败：删除文件池记录失败: Error 1451 (23000): Cannot delete or update a parent row: a foreign key constraint fails (`wedrive`.`user_files`, CONSTRAINT `fk_user_files_file_store` FOREIGN KEY (`file_store_id`) REFERENCES `file_stores` (`id`))"}
+{"level":"info","ts":"2026-03-21T16:20:03.588+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-21T16:30:40.254+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-21T16:33:58.368+0800","caller":"api/file-handler.go:60","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-21T16:34:44.229+0800","caller":"api/file-handler.go:60","msg":"文件上传成功"}
+{"level":"info","ts":"2026-03-21T16:42:02.619+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-21T16:42:26.126+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 38"}
+{"level":"info","ts":"2026-03-21T16:42:38.555+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 39"}
+{"level":"info","ts":"2026-03-21T16:46:04.807+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-21T16:46:23.801+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:46:25.899+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:46:27.719+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:46:29.211+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:46:30.248+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:46:38.368+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:46:43.543+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:49:27.841+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:49:33.594+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:52:25.867+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:52:31.490+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:52:32.626+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:52:37.398+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:52:38.555+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:52:39.490+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:52:49.743+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-21T16:52:56.787+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:53:33.727+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:54:36.050+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-21T16:54:47.033+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:56:04.611+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:59:12.887+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:59:21.822+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-21T16:59:29.194+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:59:31.167+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:59:31.796+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:59:32.306+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:59:39.884+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T16:59:51.279+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-21T17:07:47.034+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-21T17:07:51.905+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T17:07:54.165+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T17:08:05.191+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T17:08:06.870+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T17:08:08.153+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T17:08:32.133+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-21T17:08:43.551+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-21T17:08:47.220+0800","caller":"api/share-handler.go:99","msg":"获取分享文件下载URL成功"}
+{"level":"info","ts":"2026-03-22T14:15:04.827+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-22T14:27:46.172+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 40"}
+{"level":"info","ts":"2026-03-22T14:28:02.106+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 41"}
+{"level":"info","ts":"2026-03-22T14:28:13.732+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 42"}
+{"level":"info","ts":"2026-03-22T14:32:07.800+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 43"}
+{"level":"info","ts":"2026-03-22T14:37:37.646+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 44"}
+{"level":"info","ts":"2026-03-22T14:37:51.876+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-22T14:38:00.455+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-22T14:39:14.364+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-22T14:39:29.432+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 45"}
+{"level":"info","ts":"2026-03-22T14:40:40.096+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 46"}
+{"level":"info","ts":"2026-03-22T14:40:57.690+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-22T14:51:37.961+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-22T14:57:28.296+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-22T15:00:14.791+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-22T15:01:44.135+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-22T15:01:49.694+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-22T15:06:37.840+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-22T15:44:36.257+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-22T15:46:44.173+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 47"}
+{"level":"info","ts":"2026-03-22T15:48:48.271+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 48"}
+{"level":"info","ts":"2026-03-22T15:48:55.508+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 49"}
+{"level":"info","ts":"2026-03-22T15:49:19.849+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 50"}
+{"level":"info","ts":"2026-03-22T15:49:26.191+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 51"}
+{"level":"info","ts":"2026-03-22T15:50:22.620+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 52"}
+{"level":"info","ts":"2026-03-22T15:50:39.685+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 53"}
+{"level":"info","ts":"2026-03-22T15:52:43.454+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 54"}
+{"level":"info","ts":"2026-03-22T15:52:49.677+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 55"}
+{"level":"info","ts":"2026-03-22T15:52:56.143+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 56"}
+{"level":"info","ts":"2026-03-22T15:53:09.089+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 57"}
+{"level":"info","ts":"2026-03-22T15:54:19.664+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 58"}
+{"level":"info","ts":"2026-03-22T15:54:25.227+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 59"}
+{"level":"info","ts":"2026-03-22T15:55:41.198+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 60"}
+{"level":"info","ts":"2026-03-22T15:56:20.409+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 61"}
+{"level":"info","ts":"2026-03-22T15:56:34.656+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 62"}
+{"level":"info","ts":"2026-03-22T15:57:21.445+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 63"}
+{"level":"info","ts":"2026-03-22T15:57:32.223+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 64"}
+{"level":"info","ts":"2026-03-22T15:59:34.598+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-22T15:59:50.694+0800","caller":"service/file-service.go:168","msg":"秒传成功, fileHash: a8f49b929d0af2a5c3dbe75631a2515b, userID: 8, parentID: 0"}
+{"level":"info","ts":"2026-03-22T15:59:50.694+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 65"}
+{"level":"info","ts":"2026-03-22T16:00:38.115+0800","caller":"service/file-service.go:168","msg":"秒传成功, fileHash: a8f49b929d0af2a5c3dbe75631a2515b, userID: 8, parentID: 0"}
+{"level":"info","ts":"2026-03-22T16:00:38.115+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 66"}
+{"level":"info","ts":"2026-03-22T16:11:32.074+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-22T16:19:03.292+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}

@@ -77,7 +77,7 @@
           <Dialog v-model:open="showShareDownloadDialog">
             <DialogTrigger as-child>
               <Button variant="outline">
-                <Download class="h-4 w-4" />
+                <ShareExtractIcon class="h-4 w-4" />
                 提取分享
               </Button>
             </DialogTrigger>
@@ -337,6 +337,7 @@ import DropdownMenuLabel from '@/components/ui/dropdown-menu/DropdownMenuLabel.v
 import DropdownMenuSeparator from '@/components/ui/dropdown-menu/DropdownMenuSeparator.vue'
 import DropdownMenuRadioGroup from '@/components/ui/dropdown-menu/DropdownMenuRadioGroup.vue'
 import DropdownMenuRadioItem from '@/components/ui/dropdown-menu/DropdownMenuRadioItem.vue'
+import ShareExtractIcon from '@/components/icons/ShareExtractIcon.vue'
 import { useFileStore } from '../stores/file'
 import { useUserStore } from '../stores/user'
 import { uploadFile, createFolder, deleteFile, permanentDeleteFile, downloadFile } from '../api/file'
@@ -384,14 +385,18 @@ const currentExpireLabel = computed(() => expireOptions.find((opt) => opt.value 
 const filePondServer = {
   process: (fieldName, file, metadata, load, error, progress, abort) => {
     const controller = new AbortController()
+    let finalized = false
 
     uploadFile(file, fileStore.currentParentId, (event) => {
+      if (finalized) return
       const total = event.total || event.loaded || 0
       if (!total) return
       progress(Boolean(event.lengthComputable || event.total), event.loaded, total)
     }, controller.signal)
       .then((res) => {
         const uploadedId = res?.data?.id
+        finalized = true
+        progress(true, 1, 1)
         load(String(uploadedId || Date.now()))
         toast.success('上传成功')
         Promise.allSettled([
@@ -401,11 +406,13 @@ const filePondServer = {
       })
       .catch((err) => {
         if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
+        finalized = true
         error(err.message || '上传失败')
       })
 
     return {
       abort: () => {
+        finalized = true
         controller.abort()
         abort()
       },
@@ -587,9 +594,9 @@ async function handleCreateShare() {
 function copyShareLink() {
   navigator.clipboard.writeText(shareLink.value).then(() => {
     if (shareForm.key) {
-      toast.success(`链接已复制，提取码：${shareForm.key}`)
+      toast.success(`已复制，提取码 ${shareForm.key}`)
     } else {
-      toast.success('链接已复制到剪贴板')
+      toast.success('链接已复制')
     }
   })
 }
@@ -634,7 +641,7 @@ watch(showShareDownloadDialog, (open) => {
 
 :deep(.filepond--item > .filepond--file-wrapper),
 :deep(.filepond--item > .filepond--panel) {
-  transition-duration: 100ms !important;
+  transition-duration: 160ms !important;
 }
 
 :deep(.filepond--file-action-button) {

@@ -1,4 +1,5 @@
 import tailwindcssAnimate from 'tailwindcss-animate'
+import { setupInspiraUI } from '@inspira-ui/plugins'
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -17,28 +18,28 @@ export default {
       colors: {
         border: '#e5e5e5',
         input: '#e5e5e5',
-        ring: '#171717',
+        ring: '#18181b',
         background: '#fafafa',
-        foreground: '#171717',
+        foreground: '#18181b',
         primary: {
-          DEFAULT: '#171717',
+          DEFAULT: '#18181b',
           foreground: '#ffffff',
         },
         secondary: {
           DEFAULT: '#f5f5f5',
-          foreground: '#171717',
+          foreground: '#18181b',
         },
         muted: {
           DEFAULT: '#f5f5f5',
-          foreground: '#737373',
+          foreground: '#71717a',
         },
         accent: {
           DEFAULT: '#f5f5f5',
-          foreground: '#171717',
+          foreground: '#18181b',
         },
         card: {
           DEFAULT: '#ffffff',
-          foreground: '#171717',
+          foreground: '#18181b',
         },
       },
       boxShadow: {
@@ -61,6 +62,5 @@ export default {
       },
     },
   },
-  plugins: [tailwindcssAnimate],
+  plugins: [tailwindcssAnimate, setupInspiraUI],
 }
-

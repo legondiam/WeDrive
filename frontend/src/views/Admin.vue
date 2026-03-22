@@ -1,12 +1,12 @@
 <template>
   <div class="space-y-3">
     <Card class="p-4">
-      <h2 class="text-[24px] font-semibold leading-[1.4] text-foreground">管理面板</h2>
-      <p class="mt-1 text-[14px] leading-[1.6] text-neutral-500">管理用户会员状态</p>
+      <h2 class="text-[26px] font-bold leading-[1.2] text-zinc-900">管理面板</h2>
+      <p class="mt-1 text-[14px] leading-[1.6] text-zinc-500">管理用户会员状态</p>
     </Card>
 
     <Card class="p-4">
-      <h3 class="text-[20px] font-semibold leading-[1.4] text-foreground">更新用户会员</h3>
+      <h3 class="text-[22px] font-bold leading-[1.25] text-zinc-900">更新用户会员</h3>
 
       <div class="mt-4 max-w-xl space-y-4">
         <div class="space-y-1">
