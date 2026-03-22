@@ -3,7 +3,8 @@ import { ref } from 'vue'
 import { getUserInfo } from '../api/user'
 
 export const useUserStore = defineStore('user', () => {
-  const totalSpace = ref('')
+  const DEFAULT_TOTAL_SPACE = '500MB'
+  const totalSpace = ref(DEFAULT_TOTAL_SPACE)
   const usedSpace = ref('')
   const username = ref('')
   const isMember = ref(false)
@@ -13,7 +14,7 @@ export const useUserStore = defineStore('user', () => {
     try {
       const res = await getUserInfo()
       username.value = res.data.Username || ''
-      totalSpace.value = res.data.TotalSpace
+      totalSpace.value = res.data.TotalSpace || DEFAULT_TOTAL_SPACE
       usedSpace.value = res.data.UsedSpace
       isMember.value = Boolean(res.data.IsMember)
       memberStatus.value = res.data.MemberStatus || (isMember.value ? '会员' : '非会员')
@@ -39,7 +40,7 @@ export const useUserStore = defineStore('user', () => {
 
   function logout() {
     localStorage.removeItem('accessToken')
-    totalSpace.value = ''
+    totalSpace.value = DEFAULT_TOTAL_SPACE
     usedSpace.value = ''
     username.value = ''
     isMember.value = false

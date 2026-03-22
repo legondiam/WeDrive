@@ -10,7 +10,7 @@ type User struct {
 	gorm.Model
 	Username    string `gorm:"unique"`
 	Password    string
-	TotalSpace  int64 `gorm:"default:1073741824"`
+	TotalSpace  int64 `gorm:"default:524288000"`
 	UsedSpace   int64 `gorm:"default:0"`
 	MemberLevel int8  `gorm:"default:0"`
 	VipExpireAt *time.Time
