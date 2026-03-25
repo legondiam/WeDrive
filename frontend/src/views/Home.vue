@@ -159,6 +159,29 @@
     </Card>
 
     <Card class="overflow-hidden">
+      <div
+        v-if="selectedRows.length"
+        class="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-stone-50 px-4 py-3"
+      >
+        <div class="flex items-center gap-3">
+          <span class="rounded-full bg-stone-200 px-2.5 py-1 text-[12px] font-medium leading-none text-stone-700">
+            已选 {{ selectedRows.length }} 项
+          </span>
+          <button
+            class="text-[13px] leading-[1.6] text-stone-500 transition-colors hover:text-stone-700"
+            @click="clearSelection"
+          >
+            取消选择
+          </button>
+        </div>
+        <Button
+          variant="destructive"
+          :disabled="deleting"
+          @click="handleBatchDelete"
+        >
+          移入回收站
+        </Button>
+      </div>
       <div v-if="fileStore.loading" class="p-6 text-center text-[14px] leading-[1.6] text-neutral-500">
         加载中...
       </div>
@@ -168,6 +191,15 @@
       <Table v-else>
         <TableHeader class="bg-neutral-50">
           <TableRow class="hover:bg-transparent">
+            <TableHead class="w-14 text-center">
+              <input
+                type="checkbox"
+                class="selection-checkbox"
+                :checked="allRowsSelected"
+                :indeterminate.prop="someRowsSelected"
+                @change="toggleSelectAll"
+              >
+            </TableHead>
             <TableHead>名称</TableHead>
             <TableHead class="text-center">大小</TableHead>
             <TableHead class="text-center">修改时间</TableHead>
@@ -178,9 +210,19 @@
           <TableRow
             v-for="row in fileStore.files"
             :key="row.id"
-            class="cursor-default"
+            class="cursor-default transition-colors"
+            :class="isSelected(row.id) ? 'bg-stone-50/80 hover:bg-stone-50' : ''"
             @dblclick="handleRowDblClick(row)"
           >
+            <TableCell class="text-center">
+              <input
+                :checked="isSelected(row.id)"
+                type="checkbox"
+                class="selection-checkbox"
+                @change="toggleRowSelection(row.id, $event.target.checked)"
+                @click.stop
+              >
+            </TableCell>
             <TableCell>
               <div class="flex items-center gap-2">
                 <Folder v-if="row.is_folder" class="h-4 w-4 text-neutral-600" />
@@ -286,7 +328,7 @@
         <DialogHeader>
           <DialogTitle>删除文件</DialogTitle>
           <DialogDescription>
-            确定要删除「{{ deleteTarget?.file_name }}」吗？删除后可在回收站恢复。
+            {{ deleteDialogDescription }}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -340,7 +382,7 @@ import DropdownMenuRadioItem from '@/components/ui/dropdown-menu/DropdownMenuRad
 import ShareExtractIcon from '@/components/icons/ShareExtractIcon.vue'
 import { useFileStore } from '../stores/file'
 import { useUserStore } from '../stores/user'
-import { uploadFile, createFolder, deleteFile, permanentDeleteFile, downloadFile } from '../api/file'
+import { uploadFile, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
 import { createShare, downloadShare } from '../api/share'
 
 const FilePond = vueFilePond()
@@ -360,7 +402,9 @@ const sharing = ref(false)
 const shareDownloading = ref(false)
 const shareTarget = ref(null)
 const deleteTarget = ref(null)
+const deleteTargets = ref([])
 const shareResult = ref(null)
+const selectedIds = ref([])
 const shareForm = reactive({
   expiretime: '7',
   key: '',
@@ -382,6 +426,16 @@ const expireOptions = [
   { value: 'permanent', label: '永久' },
 ]
 const currentExpireLabel = computed(() => expireOptions.find((opt) => opt.value === shareForm.expiretime)?.label || '请选择')
+const selectedRows = computed(() => fileStore.files.filter((row) => selectedIds.value.includes(row.id)))
+const allRowsSelected = computed(() => fileStore.files.length > 0 && selectedRows.value.length === fileStore.files.length)
+const someRowsSelected = computed(() => selectedRows.value.length > 0 && selectedRows.value.length < fileStore.files.length)
+const deleteDialogDescription = computed(() => {
+  if (deleteTargets.value.length > 1) {
+    return `确定要将选中的 ${deleteTargets.value.length} 个项目移入回收站吗？删除后可在回收站恢复。`
+  }
+  const currentTarget = deleteTarget.value || deleteTargets.value[0]
+  return `确定要删除「${currentTarget?.file_name || ''}」吗？删除后可在回收站恢复。`
+})
 const filePondServer = {
   process: (fieldName, file, metadata, load, error, progress, abort) => {
     const controller = new AbortController()
@@ -452,6 +506,28 @@ function handleRowDblClick(row) {
   if (row.is_folder) fileStore.enterFolder(row)
 }
 
+function isSelected(id) {
+  return selectedIds.value.includes(id)
+}
+
+function toggleRowSelection(id, checked) {
+  if (checked) {
+    if (!selectedIds.value.includes(id)) {
+      selectedIds.value = [...selectedIds.value, id]
+    }
+    return
+  }
+  selectedIds.value = selectedIds.value.filter((item) => item !== id)
+}
+
+function toggleSelectAll(event) {
+  selectedIds.value = event.target.checked ? fileStore.files.map((row) => row.id) : []
+}
+
+function clearSelection() {
+  selectedIds.value = []
+}
+
 function closeUpload() {
   uploadPond.value?.removeFiles?.()
   showUploadDialog.value = false
@@ -477,17 +553,34 @@ async function handleCreateFolder() {
 
 function handleDelete(row) {
   deleteTarget.value = row
+  deleteTargets.value = [row]
+  showDeleteDialog.value = true
+}
+
+function handleBatchDelete() {
+  if (!selectedRows.value.length) {
+    toast.warning('请先勾选要删除的文件')
+    return
+  }
+  deleteTarget.value = null
+  deleteTargets.value = [...selectedRows.value]
   showDeleteDialog.value = true
 }
 
 async function confirmDelete() {
-  if (!deleteTarget.value) return
+  if (!deleteTargets.value.length) return
   deleting.value = true
   try {
-    await deleteFile(deleteTarget.value.id)
+    if (deleteTargets.value.length === 1 && deleteTarget.value) {
+      await deleteFile(deleteTarget.value.id)
+    } else {
+      await batchDeleteFiles(deleteTargets.value.map((item) => item.id))
+    }
     toast.success('已移入回收站')
     showDeleteDialog.value = false
     deleteTarget.value = null
+    deleteTargets.value = []
+    clearSelection()
     fileStore.refresh()
     userStore.fetchUserInfo()
   } finally {
@@ -654,12 +747,81 @@ onMounted(() => {
   fileStore.fetchFiles(0)
 })
 
+watch(() => fileStore.files, (files) => {
+  const validIds = new Set(files.map((item) => item.id))
+  selectedIds.value = selectedIds.value.filter((id) => validIds.has(id))
+}, { deep: true })
+
+watch(showDeleteDialog, (open) => {
+  if (!open && !deleting.value) {
+    deleteTarget.value = null
+    deleteTargets.value = []
+  }
+})
+
 watch(showShareDownloadDialog, (open) => {
   if (!open) resetShareDownloadDialog()
 })
 </script>
 
 <style scoped>
+.selection-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin: 0;
+  vertical-align: middle;
+  background-color: rgb(255 255 255);
+  border-radius: 9999px;
+  border: 1px solid rgb(231 229 228);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.selection-checkbox:hover {
+  border-color: rgb(214 211 209);
+}
+
+.selection-checkbox:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(214, 211, 209, 0.18);
+}
+
+.selection-checkbox::before {
+  content: '';
+  width: 0.28rem;
+  height: 0.28rem;
+  border-radius: 9999px;
+  transform: scale(0);
+  transition: transform 160ms ease;
+  background-color: rgb(87 83 78);
+}
+
+.selection-checkbox:checked {
+  background-color: rgb(245 245 244);
+  border-color: rgb(196 181 173);
+}
+
+.selection-checkbox:checked::before {
+  transform: scale(1);
+}
+
+.selection-checkbox:indeterminate {
+  background-color: rgb(245 245 244);
+  border-color: rgb(214 211 209);
+}
+
+.selection-checkbox:indeterminate::before {
+  width: 0.38rem;
+  height: 0.125rem;
+  border-radius: 9999px;
+  transform: scale(1);
+  background-color: rgb(120 113 108);
+}
+
 :deep(.filepond--root) {
   margin: 0;
   font-family: inherit;

@@ -23,6 +23,10 @@ export function deleteFile(id) {
   return request.delete(`/file/delete/${id}`)
 }
 
+export function batchDeleteFiles(ids) {
+  return request.post('/file/batch-delete', { ids })
+}
+
 export function permanentDeleteFile(id) {
   return request.delete(`/file/permanent-delete/${id}`)
 }

@@ -274,6 +274,49 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 	return nil
 }
 
+// BatchDeleteFile 批量删除文件/文件夹
+func (s *FileService) BatchDeleteFile(ctx context.Context, userID uint, userFileIDs []uint) error {
+	if len(userFileIDs) == 0 {
+		return nil
+	}
+
+	ids := make([]uint, 0, len(userFileIDs))
+	visited := make(map[uint]struct{}, len(userFileIDs))
+
+	for _, userFileID := range userFileIDs {
+		if _, ok := visited[userFileID]; ok {
+			continue
+		}
+
+		root, err := s.fileRepo.GetFileByID(ctx, userFileID, userID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrFileNotFound
+			}
+			return errors.WithMessage(err, "获取文件失败")
+		}
+
+		visited[userFileID] = struct{}{}
+		ids = append(ids, userFileID)
+
+		if root.IsFolder {
+			if err := s.collectSubtreeIDs(ctx, userID, userFileID, &ids, visited); err != nil {
+				return errors.WithMessage(err, "收集子树ID失败")
+			}
+		}
+	}
+
+	err := s.fileRepo.DeleteUserFileByIDs(ctx, userID, ids)
+	if err != nil {
+		if errors.Is(repository.ErrFileNotFound, err) {
+			return ErrFileNotFound
+		}
+		return errors.WithMessage(err, "批量删除文件失败")
+	}
+
+	return nil
+}
+
 // GetUserFile 获取用户文件列表
 func (s *FileService) GetUserFile(ctx context.Context, userID uint, parentID uint) ([]FileResp, error) {
 	// 检查父文件夹

@@ -107,6 +107,33 @@ func (h *FileHandler) Delete(c *gin.Context) {
 	response.Success(c, nil)
 }
 
+// BatchDelete 批量删除文件
+func (h *FileHandler) BatchDelete(c *gin.Context) {
+	type BatchDeleteReq struct {
+		IDs []uint `json:"ids" binding:"required"`
+	}
+
+	var req BatchDeleteReq
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.IDs) == 0 {
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
+		return
+	}
+
+	userID, _ := c.Get("userID")
+	err := h.fileService.BatchDeleteFile(c.Request.Context(), userID.(uint), req.IDs)
+	if err != nil {
+		if errors.Is(err, service.ErrFileNotFound) {
+			response.BusinessError(c, response.CodeFileNotFound, "文件不存在")
+			return
+		}
+		response.ServerError(c, "批量删除失败")
+		logger.S.Errorf("批量删除文件失败：%v", err)
+		return
+	}
+
+	response.Success(c, gin.H{"count": len(req.IDs)})
+}
+
 // GetUserFile 获取用户文件列表
 func (h *FileHandler) GetUserFile(c *gin.Context) {
 	parentIDString := c.Query("parent_id")
