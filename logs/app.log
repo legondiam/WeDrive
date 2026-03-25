@@ -497,3 +497,8 @@ runtime.goexit
 {"level":"info","ts":"2026-03-23T17:27:11.986+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
 {"level":"info","ts":"2026-03-23T17:27:43.123+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
 {"level":"info","ts":"2026-03-25T14:27:06.802+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-25T15:31:12.201+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-25T15:47:49.057+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 67"}
+{"level":"info","ts":"2026-03-25T15:48:05.672+0800","caller":"api/file-handler.go:60","msg":"文件上传成功。文件ID: 68"}
+{"level":"fatal","ts":"2026-03-25T22:46:53.697+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": dial tcp 127.0.0.1:9000: connectex: No connection could be made because the target machine actively refused it.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}
+{"level":"info","ts":"2026-03-25T22:47:10.453+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
