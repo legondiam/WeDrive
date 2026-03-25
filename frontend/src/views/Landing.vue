@@ -47,24 +47,9 @@
           </div>
 
           <div class="mt-10 flex flex-wrap items-center gap-3 isolate">
-            <template v-if="!hasToken">
-              <RouterLink
-                to="/login"
-                class="rounded-full bg-zinc-950 px-6 py-3 text-[14px] font-medium text-white transition-all duration-200 hover:bg-zinc-800"
-              >
-                前往登录
-              </RouterLink>
-              <RouterLink
-                to="/register"
-                class="rounded-full border border-zinc-200 bg-white px-6 py-3 text-[14px] font-medium text-zinc-700 transition-all duration-200 hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900"
-              >
-                创建账户
-              </RouterLink>
-            </template>
             <InteractiveHoverButton
-              v-else
               :as="RouterLink"
-              to="/drive"
+              :to="hasToken ? '/drive' : '/login'"
               text="立即体验"
               class="border-zinc-300 bg-zinc-50 text-zinc-950 hover:border-zinc-400"
             />

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { ensureAccessToken } from '../api/request'
 
 const routes = [
   {
@@ -54,7 +55,14 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, _from, next) => {
+let authInitialized = false
+
+router.beforeEach(async (to, _from, next) => {
+  if (!authInitialized || (to.meta.auth && !localStorage.getItem('accessToken'))) {
+    await ensureAccessToken()
+    authInitialized = true
+  }
+
   const token = localStorage.getItem('accessToken')
   if (to.meta.auth && !token) {
     next('/login')

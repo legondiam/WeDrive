@@ -481,3 +481,19 @@ runtime.goexit
 {"level":"fatal","ts":"2026-03-22T22:22:58.952+0800","caller":"cmd/main.go:21","msg":"依赖初始化失败:Get \"http://127.0.0.1:9000/wedrive/?location=\": dial tcp 127.0.0.1:9000: connectex: No connection could be made because the target machine actively refused it.\nWeDrive/internal/initialize.MinioInit\n\tC:/Users/ll/GolandProjects/WeDrive/internal/initialize/minio.go:22\nWeDrive/internal/app.Init\n\tC:/Users/ll/GolandProjects/WeDrive/internal/app/app.go:20\nmain.main\n\tC:/Users/ll/GolandProjects/WeDrive/cmd/main.go:19\nruntime.main\n\tD:/Go/src/runtime/proc.go:283\nruntime.goexit\n\tD:/Go/src/runtime/asm_amd64.s:1700\nminio初始化失败"}
 {"level":"info","ts":"2026-03-22T22:23:02.679+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
 {"level":"info","ts":"2026-03-22T22:28:27.199+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-22T22:30:11.231+0800","caller":"api/user-handler.go:45","msg":"用户注册成功。username:测试1"}
+{"level":"info","ts":"2026-03-22T22:30:22.263+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:测试1"}
+{"level":"info","ts":"2026-03-22T22:32:32.674+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-22T22:33:50.328+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-22T22:47:21.230+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-23T16:42:01.693+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-23T16:53:11.051+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-23T16:53:18.807+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-23T16:53:40.806+0800","caller":"api/user-handler.go:45","msg":"用户注册成功。username:22user"}
+{"level":"info","ts":"2026-03-23T16:53:42.263+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-23T16:53:51.918+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:22user"}
+{"level":"info","ts":"2026-03-23T17:26:51.887+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}
+{"level":"info","ts":"2026-03-23T17:27:05.812+0800","caller":"api/user-handler.go:75","msg":"用户登录成功。username:firstuser"}
+{"level":"info","ts":"2026-03-23T17:27:11.986+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-23T17:27:43.123+0800","caller":"api/share-handler.go:69","msg":"创建分享文件成功"}
+{"level":"info","ts":"2026-03-25T14:27:06.802+0800","caller":"cmd/main.go:25","msg":"服务启动成功"}

@@ -592,13 +592,62 @@ async function handleCreateShare() {
 }
 
 function copyShareLink() {
-  navigator.clipboard.writeText(shareLink.value).then(() => {
+  if (!shareLink.value) {
+    toast.warning('暂无可复制的分享链接')
+    return
+  }
+
+  const onCopySuccess = () => {
     if (shareForm.key) {
       toast.success(`已复制，提取码 ${shareForm.key}`)
     } else {
       toast.success('链接已复制')
     }
-  })
+  }
+
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    navigator.clipboard.writeText(shareLink.value)
+      .then(onCopySuccess)
+      .catch(() => fallbackCopyShareLink())
+    return
+  }
+
+  fallbackCopyShareLink()
+}
+
+function fallbackCopyShareLink() {
+  const textarea = document.createElement('textarea')
+  textarea.value = shareLink.value
+  textarea.setAttribute('readonly', 'readonly')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.width = '1px'
+  textarea.style.height = '1px'
+  textarea.style.padding = '0'
+  textarea.style.border = '0'
+  textarea.style.outline = '0'
+  textarea.style.boxShadow = 'none'
+  textarea.style.background = 'transparent'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+
+  try {
+    const copied = document.execCommand('copy')
+    if (!copied) throw new Error('copy failed')
+    if (shareForm.key) {
+      toast.success(`已复制，提取码 ${shareForm.key}`)
+    } else {
+      toast.success('链接已复制')
+    }
+  } catch {
+    toast.error('复制失败，请手动复制输入框中的链接')
+  } finally {
+    document.body.removeChild(textarea)
+  }
 }
 
 onMounted(() => {
