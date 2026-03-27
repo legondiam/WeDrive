@@ -24,6 +24,7 @@ const (
 	// 文件模块
 	CodeUserSpaceNotEnough = 3001 // 用户空间不足
 	CodeFileNotFound       = 3002 // 文件不存在
+	CodeInstantUnavailable = 3003 // 秒传条件失效
 
 	// 分享模块
 	CodeShareNotFound   = 4001 // 分享不存在

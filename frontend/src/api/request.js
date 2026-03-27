@@ -2,6 +2,18 @@ import axios from 'axios'
 import { toast } from 'vue-sonner'
 import router from '../router'
 
+function createRequestError(message, code) {
+  const err = new Error(message || '请求失败')
+  if (typeof code !== 'undefined') {
+    err.code = code
+  }
+  return err
+}
+
+function shouldToastBusinessError(code) {
+  return code !== 3003
+}
+
 const service = axios.create({
   baseURL: '/api/v1',
   timeout: 120000,
@@ -26,8 +38,10 @@ service.interceptors.response.use(
       if (res.code === 1005) {
         return tryRefreshToken(response.config)
       }
-      toast.error(res.msg || '请求失败')
-      return Promise.reject(new Error(res.msg || '请求失败'))
+      if (shouldToastBusinessError(res.code)) {
+        toast.error(res.msg || '请求失败')
+      }
+      return Promise.reject(createRequestError(res.msg || '请求失败', res.code))
     }
     return res
   },
@@ -35,9 +49,12 @@ service.interceptors.response.use(
     if (error.response?.status === 401 || error.response?.data?.code === 1005) {
       return tryRefreshToken(error.config)
     }
+    const code = error.response?.data?.code
     const message = error.response?.data?.msg || error.message || '网络错误'
-    toast.error(message)
-    return Promise.reject(new Error(message))
+    if (shouldToastBusinessError(code)) {
+      toast.error(message)
+    }
+    return Promise.reject(createRequestError(message, code))
   }
 )
 

@@ -18,6 +18,13 @@ func NewFileHandler(fileService *service.FileService) *FileHandler {
 	return &FileHandler{fileService: fileService}
 }
 
+type instantUploadReq struct {
+	FileHash string `json:"file_hash" binding:"required"`
+	FileName string `json:"file_name" binding:"required"`
+	FileSize int64  `json:"file_size"`
+	ParentID uint   `json:"parent_id"`
+}
+
 // Upload 上传文件
 func (h *FileHandler) Upload(c *gin.Context) {
 	// 获取上传的文件
@@ -58,6 +65,35 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"id": uploadedID})
 	logger.S.Infof("文件上传成功。文件ID: %v", uploadedID)
+}
+
+// InstantUpload 秒传
+func (h *FileHandler) InstantUpload(c *gin.Context) {
+	var req instantUploadReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
+		return
+	}
+	userID, _ := c.Get("userID")
+	uploadedID, err := h.fileService.InstantUpload(c.Request.Context(), userID.(uint), req.ParentID, req.FileName, req.FileHash, req.FileSize)
+	if err != nil {
+		if errors.Is(err, service.ErrParentFolderInvalid) {
+			response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
+			return
+		}
+		if errors.Is(err, service.ErrUserSpaceNotEnough) {
+			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
+			return
+		}
+		if errors.Is(err, service.ErrInstantUploadUnavailable) {
+			response.BusinessError(c, response.CodeInstantUnavailable, "不允许秒传")
+			return
+		}
+		response.ServerError(c, "秒传失败")
+		logger.S.Errorf("秒传失败：%v", err)
+		return
+	}
+	response.Success(c, gin.H{"instant": true, "id": uploadedID})
 }
 
 // CreateFolder 创建文件夹

@@ -382,8 +382,11 @@ import DropdownMenuRadioItem from '@/components/ui/dropdown-menu/DropdownMenuRad
 import ShareExtractIcon from '@/components/icons/ShareExtractIcon.vue'
 import { useFileStore } from '../stores/file'
 import { useUserStore } from '../stores/user'
-import { uploadFile, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
+import { uploadFile, instantUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
 import { createShare, downloadShare } from '../api/share'
+import { calculateFileMD5 } from '../lib/md5'
+
+const CODE_INSTANT_UNAVAILABLE = 3003
 
 const FilePond = vueFilePond()
 const fileStore = useFileStore()
@@ -436,27 +439,63 @@ const deleteDialogDescription = computed(() => {
   const currentTarget = deleteTarget.value || deleteTargets.value[0]
   return `确定要删除「${currentTarget?.file_name || ''}」吗？删除后可在回收站恢复。`
 })
+
 const filePondServer = {
   process: (fieldName, file, metadata, load, error, progress, abort) => {
     const controller = new AbortController()
     let finalized = false
 
-    uploadFile(file, fileStore.currentParentId, (event) => {
-      if (finalized) return
-      const total = event.total || event.loaded || 0
-      if (!total) return
-      progress(Boolean(event.lengthComputable || event.total), event.loaded, total)
-    }, controller.signal)
+    calculateFileMD5(file)
+      .then(async (fileHash) => {
+        if (finalized) return
+
+        let instantRes = null
+        try {
+          instantRes = await instantUpload({
+            file_hash: fileHash,
+            file_name: file.name,
+            file_size: file.size,
+            parent_id: fileStore.currentParentId,
+          })
+        } catch (err) {
+          if (err?.code !== CODE_INSTANT_UNAVAILABLE) throw err
+        }
+        if (finalized) return
+
+        if (instantRes?.data?.instant) {
+          const uploadedId = instantRes?.data?.id
+          finalized = true
+          progress(true, 1, 1)
+          load(String(uploadedId || Date.now()))
+          toast.success('秒传成功')
+          Promise.allSettled([
+            fileStore.refresh(),
+            userStore.fetchUserInfo(),
+          ])
+          return
+        }
+
+        return uploadFile(file, fileStore.currentParentId, (event) => {
+          if (finalized) return
+          const total = event.total || event.loaded || 0
+          if (!total) return
+          progress(Boolean(event.lengthComputable || event.total), event.loaded, total)
+        }, controller.signal)
+          .then((res) => {
+            if (finalized) return
+            const uploadedId = res?.data?.id
+            finalized = true
+            progress(true, 1, 1)
+            load(String(uploadedId || Date.now()))
+            toast.success('上传成功')
+            Promise.allSettled([
+              fileStore.refresh(),
+              userStore.fetchUserInfo(),
+            ])
+          })
+      })
       .then((res) => {
-        const uploadedId = res?.data?.id
-        finalized = true
-        progress(true, 1, 1)
-        load(String(uploadedId || Date.now()))
-        toast.success('上传成功')
-        Promise.allSettled([
-          fileStore.refresh(),
-          userStore.fetchUserInfo(),
-        ])
+        if (!res || finalized) return
       })
       .catch((err) => {
         if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return

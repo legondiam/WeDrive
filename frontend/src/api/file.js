@@ -15,6 +15,10 @@ export function uploadFile(file, parentId = 0, onProgress, signal) {
   })
 }
 
+export function instantUpload(payload) {
+  return request.post('/file/instant-upload', payload)
+}
+
 export function createFolder(name, parentId = 0) {
   return request.post('/file/upload-folder', { name, parent_id: parentId })
 }

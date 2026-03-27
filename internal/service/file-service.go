@@ -20,6 +20,7 @@ import (
 var ErrUserSpaceNotEnough = errors.New("用户空间不足")
 var ErrFileNotFound = errors.New("文件不存在")
 var ErrParentFolderInvalid = errors.New("父文件夹不合法")
+var ErrInstantUploadUnavailable = errors.New("秒传条件失效")
 
 type FileService struct {
 	fileRepo *repository.FileRepo
@@ -48,6 +49,10 @@ type FileResp struct {
 type DownloadFileResp struct {
 	URL      string `json:"url"`
 	FileName string `json:"file_name"`
+}
+
+type InstantUploadResp struct {
+	ID uint `json:"id"`
 }
 
 func NewFileService(fileRepo *repository.FileRepo, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
@@ -121,6 +126,60 @@ func (s *FileService) checkUserMember(user *model.User) string {
 	return "vip"
 }
 
+// createInstantUploadRecord 创建秒传记录
+func (s *FileService) createInstantUploadRecord(ctx context.Context, tx *gorm.DB, userID uint, parentID uint, fileName string, fileSize int64, fileStore *model.FileStore) (uint, error) {
+	newUserFile := &model.UserFile{
+		UserId:      userID,
+		FileName:    fileName,
+		FileStoreID: &fileStore.ID,
+		ParentID:    parentID,
+	}
+	if err := s.fileRepo.CreateUserFile(ctx, newUserFile, tx); err != nil {
+		return 0, errors.WithMessage(err, "秒传文件存储失败")
+	}
+	if err := s.userRepo.UpdateUserSpace(ctx, userID, fileSize, tx); err != nil {
+		return 0, errors.WithMessage(err, "更新用户空间失败")
+	}
+	return newUserFile.ID, nil
+}
+
+// InstantUpload 命中秒传后的确认落库
+func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID uint, fileName string, fileHash string, fileSize int64) (uint, error) {
+	if err := s.checkParentFolder(ctx, userID, parentID); err != nil {
+		return 0, errors.WithMessage(err, "父文件夹不合法")
+	}
+	var uploadedID uint
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		//校验哈希
+		fileStore, err := s.fileRepo.GetFileByHashForUpdate(ctx, fileHash, tx)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrInstantUploadUnavailable
+			}
+			return errors.WithMessage(err, "文件查询异常")
+		}
+		//校验文件大小
+		if fileSize > 0 && fileStore.FileSize != fileSize {
+			return ErrInstantUploadUnavailable
+		}
+		user, userErr := s.userRepo.GetUserInfo(ctx, userID)
+		if userErr != nil {
+			return errors.WithMessage(userErr, "获取用户信息失败")
+		}
+		if user.UsedSpace+fileStore.FileSize > user.TotalSpace {
+			return ErrUserSpaceNotEnough
+		}
+		uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, parentID, fileName, fileStore.FileSize, fileStore)
+		return errors.WithMessage(err, "秒传文件存储失败")
+	})
+	if err != nil {
+		return 0, errors.WithMessage(err, "秒传失败")
+	}
+
+	logger.S.Infof("前端秒传确认成功, fileHash: %s, userID: %d, parentID: %d", fileHash, userID, parentID)
+	return uploadedID, nil
+}
+
 // UploadFile 上传文件
 func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.FileHeader, userID uint, parentID uint) (uint, error) {
 	// 检查父文件夹
@@ -142,33 +201,27 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		return 0, errors.WithMessage(err, "文件hash计算失败")
 	}
 	// 查询文件哈希
-	fileStore, err := s.fileRepo.GetFileByHash(ctx, fileHash)
+	_, err = s.fileRepo.GetFileByHash(ctx, fileHash)
 	// 秒传成功
 	if err == nil {
 		var uploadedID uint
 		err = s.db.Transaction(func(tx *gorm.DB) error {
-			newUserFile := &model.UserFile{
-				UserId:      userID,
-				FileName:    fileHeader.Filename,
-				FileStoreID: &fileStore.ID,
-				ParentID:    parentID,
+			lockedStore, lockErr := s.fileRepo.GetFileByHashForUpdate(ctx, fileHash, tx)
+			if lockErr != nil {
+				if errors.Is(lockErr, gorm.ErrRecordNotFound) {
+					return ErrInstantUploadUnavailable
+				}
+				return errors.WithMessage(lockErr, "文件查询异常")
 			}
-			err = s.fileRepo.CreateUserFile(ctx, newUserFile, tx)
-			if err != nil {
-				return errors.WithMessage(err, "秒传文件存储失败")
-			}
-			uploadedID = newUserFile.ID
-			// 更新用户空间
-			err = s.userRepo.UpdateUserSpace(ctx, userID, fileHeader.Size, tx)
-			if err != nil {
-				return errors.WithMessage(err, "更新用户空间失败")
-			}
-			return nil
+			uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, parentID, fileHeader.Filename, fileHeader.Size, lockedStore)
+			return err
 		})
-		logger.S.Infof("秒传成功, fileHash: %s, userID: %d, parentID: %d", fileHash, userID, parentID)
-		return uploadedID, err
+		if !errors.Is(err, ErrInstantUploadUnavailable) {
+			logger.S.Infof("秒传成功, fileHash: %s, userID: %d, parentID: %d", fileHash, userID, parentID)
+			return uploadedID, err
+		}
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, errors.WithMessage(err, "文件查询异常")
 	}
 
@@ -442,6 +495,13 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 		// 扣减用户空间
 		if err := s.userRepo.UpdateUserSpace(ctx, userID, -fileSize, tx); err != nil {
 			return errors.WithMessage(err, "更新用户空间失败")
+		}
+
+		if _, err := s.fileRepo.GetFileStoreByIDForUpdate(ctx, storeID, tx); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return errors.WithMessage(err, "锁定文件池记录失败")
 		}
 
 		// 检查是否还有其他引用

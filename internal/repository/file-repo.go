@@ -6,6 +6,7 @@ import (
 
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrFileNotFound = errors.New("文件不存在或已恢复")
@@ -42,6 +43,25 @@ func (r *FileRepo) CreateUserFile(ctx context.Context, userFile *model.UserFile,
 func (r *FileRepo) GetFileByHash(ctx context.Context, hash string) (*model.FileStore, error) {
 	var fileStore model.FileStore
 	err := r.db.WithContext(ctx).Where("file_hash = ?", hash).First(&fileStore).Error
+	return &fileStore, errors.WithStack(err)
+}
+
+// GetFileByHashForUpdate 根据文件hash获取文件并加锁
+func (r *FileRepo) GetFileByHashForUpdate(ctx context.Context, hash string, tx *gorm.DB) (*model.FileStore, error) {
+	var fileStore model.FileStore
+	err := tx.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("file_hash = ?", hash).
+		First(&fileStore).Error
+	return &fileStore, errors.WithStack(err)
+}
+
+// GetFileStoreByIDForUpdate 根据文件池ID获取文件并加锁
+func (r *FileRepo) GetFileStoreByIDForUpdate(ctx context.Context, fileStoreID uint, tx *gorm.DB) (*model.FileStore, error) {
+	var fileStore model.FileStore
+	err := tx.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&fileStore, fileStoreID).Error
 	return &fileStore, errors.WithStack(err)
 }
 
