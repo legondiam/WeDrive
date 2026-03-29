@@ -55,6 +55,13 @@ type InstantUploadResp struct {
 	ID uint `json:"id"`
 }
 
+type QuickCheckReq struct {
+	FileSize int64
+	HeadHash string
+	MidHash  string
+	TailHash string
+}
+
 func NewFileService(fileRepo *repository.FileRepo, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
 	return &FileService{fileRepo: fileRepo, storage: storage, db: db, userRepo: userRepo}
 }
@@ -143,6 +150,25 @@ func (s *FileService) createInstantUploadRecord(ctx context.Context, tx *gorm.DB
 	return newUserFile.ID, nil
 }
 
+// QuickCheck 抽样哈希快速判断是否可能秒传
+func (s *FileService) QuickCheck(ctx context.Context, userID uint, req QuickCheckReq) (bool, error) {
+	if req.FileSize < 0 || req.HeadHash == "" || req.MidHash == "" || req.TailHash == "" {
+		return false, nil
+	}
+	user, err := s.userRepo.GetUserInfo(ctx, userID)
+	if err != nil {
+		return false, errors.WithMessage(err, "获取用户信息失败")
+	}
+	if user.UsedSpace+req.FileSize > user.TotalSpace {
+		return false, ErrUserSpaceNotEnough
+	}
+	exists, err := s.fileRepo.GetFileBySample(ctx, req.FileSize, req.HeadHash, req.MidHash, req.TailHash)
+	if err != nil {
+		return false, errors.WithMessage(err, "抽样哈希查询失败")
+	}
+	return exists, nil
+}
+
 // InstantUpload 命中秒传后的确认落库
 func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID uint, fileName string, fileHash string, fileSize int64) (uint, error) {
 	if err := s.checkParentFolder(ctx, userID, parentID); err != nil {
@@ -196,10 +222,11 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		return 0, ErrUserSpaceNotEnough
 	}
 	// 计算文件hash
-	fileHash, err := hash.HashFile(fileHeader)
+	fileHashes, err := hash.HashFileWithSamples(fileHeader)
 	if err != nil {
 		return 0, errors.WithMessage(err, "文件hash计算失败")
 	}
+	fileHash := fileHashes.Full
 	// 查询文件哈希
 	_, err = s.fileRepo.GetFileByHash(ctx, fileHash)
 	// 秒传成功
@@ -217,7 +244,7 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 			return err
 		})
 		if !errors.Is(err, ErrInstantUploadUnavailable) {
-			logger.S.Infof("秒传成功, fileHash: %s, userID: %d, parentID: %d", fileHash, userID, parentID)
+			logger.S.Infof("上传成功, fileHash: %s, userID: %d, parentID: %d", fileHash, userID, parentID)
 			return uploadedID, err
 		}
 	}
@@ -256,6 +283,9 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 			FileName: fileHeader.Filename,
 			FileSize: fileHeader.Size,
 			FileAddr: objectName,
+			HeadHash: fileHashes.Head,
+			MidHash:  fileHashes.Mid,
+			TailHash: fileHashes.Tail,
 		}
 		err = s.fileRepo.CreateFileStore(ctx, newFileStore, tx)
 		if err != nil {
