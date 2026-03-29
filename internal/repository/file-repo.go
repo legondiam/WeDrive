@@ -46,6 +46,19 @@ func (r *FileRepo) GetFileByHash(ctx context.Context, hash string) (*model.FileS
 	return &fileStore, errors.WithStack(err)
 }
 
+// GetFileBySample 根据抽样哈希获取文件
+func (r *FileRepo) GetFileBySample(ctx context.Context, fileSize int64, headHash string, midHash string, tailHash string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&model.FileStore{}).
+		Where("file_size = ? AND head_hash = ? AND mid_hash = ? AND tail_hash = ?", fileSize, headHash, midHash, tailHash).
+		Count(&count).Error
+	if err != nil {
+		return false, errors.WithStack(err)
+	}
+	return count > 0, nil
+}
+
 // GetFileByHashForUpdate 根据文件hash获取文件并加锁
 func (r *FileRepo) GetFileByHashForUpdate(ctx context.Context, hash string, tx *gorm.DB) (*model.FileStore, error) {
 	var fileStore model.FileStore

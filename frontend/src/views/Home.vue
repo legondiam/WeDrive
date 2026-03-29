@@ -382,9 +382,9 @@ import DropdownMenuRadioItem from '@/components/ui/dropdown-menu/DropdownMenuRad
 import ShareExtractIcon from '@/components/icons/ShareExtractIcon.vue'
 import { useFileStore } from '../stores/file'
 import { useUserStore } from '../stores/user'
-import { uploadFile, instantUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
+import { uploadFile, quickCheck, instantUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
 import { createShare, downloadShare } from '../api/share'
-import { calculateFileSHA256 } from '../lib/sha256'
+import { calculateFileSHA256, calculateFileSampleSHA256 } from '../lib/sha256'
 
 const CODE_INSTANT_UNAVAILABLE = 3003
 
@@ -444,35 +444,54 @@ const filePondServer = {
   process: (fieldName, file, metadata, load, error, progress, abort) => {
     const controller = new AbortController()
     let finalized = false
+    const finishUpload = (uploadedId, message, options = {}) => {
+      if (finalized) return
 
-    calculateFileSHA256(file)
-      .then(async (fileHash) => {
+      finalized = true
+      const serverId = String(uploadedId || Date.now())
+
+      if (!options.instant) {
+        progress(true, file.size || 1, file.size || 1)
+      }
+
+      // 秒传不会产生真实上传进度，直接结束 FilePond 的处理态。
+      load(serverId)
+      toast.success(message)
+      Promise.allSettled([
+        fileStore.refresh(),
+        userStore.fetchUserInfo(),
+      ])
+    }
+
+    calculateFileSampleSHA256(file)
+      .then(async (sampleHashes) => {
         if (finalized) return
 
-        let instantRes = null
-        try {
-          instantRes = await instantUpload({
-            file_hash: fileHash,
-            file_name: file.name,
-            file_size: file.size,
-            parent_id: fileStore.currentParentId,
-          })
-        } catch (err) {
-          if (err?.code !== CODE_INSTANT_UNAVAILABLE) throw err
-        }
+        const quickCheckRes = await quickCheck(sampleHashes)
         if (finalized) return
 
-        if (instantRes?.data?.instant) {
-          const uploadedId = instantRes?.data?.id
-          finalized = true
-          progress(true, 1, 1)
-          load(String(uploadedId || Date.now()))
-          toast.success('秒传成功')
-          Promise.allSettled([
-            fileStore.refresh(),
-            userStore.fetchUserInfo(),
-          ])
-          return
+        if (quickCheckRes?.data === true) {
+          const fileHash = await calculateFileSHA256(file)
+          if (finalized) return
+
+          let instantRes = null
+          try {
+            instantRes = await instantUpload({
+              file_hash: fileHash,
+              file_name: file.name,
+              file_size: file.size,
+              parent_id: fileStore.currentParentId,
+            })
+          } catch (err) {
+            if (err?.code !== CODE_INSTANT_UNAVAILABLE) throw err
+          }
+          if (finalized) return
+
+          if (instantRes?.data?.instant) {
+            const uploadedId = instantRes?.data?.id
+            finishUpload(uploadedId, '秒传成功', { instant: true })
+            return
+          }
         }
 
         return uploadFile(file, fileStore.currentParentId, (event) => {
@@ -484,14 +503,7 @@ const filePondServer = {
           .then((res) => {
             if (finalized) return
             const uploadedId = res?.data?.id
-            finalized = true
-            progress(true, 1, 1)
-            load(String(uploadedId || Date.now()))
-            toast.success('上传成功')
-            Promise.allSettled([
-              fileStore.refresh(),
-              userStore.fetchUserInfo(),
-            ])
+            finishUpload(uploadedId, '上传成功')
           })
       })
       .then((res) => {

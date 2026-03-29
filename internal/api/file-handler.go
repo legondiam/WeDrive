@@ -25,6 +25,13 @@ type instantUploadReq struct {
 	ParentID uint   `json:"parent_id"`
 }
 
+type quickCheckReq struct {
+	FileSize int64  `json:"file_size" binding:"required"`
+	HeadHash string `json:"head_hash" binding:"required"`
+	MidHash  string `json:"mid_hash" binding:"required"`
+	TailHash string `json:"tail_hash" binding:"required"`
+}
+
 // Upload 上传文件
 func (h *FileHandler) Upload(c *gin.Context) {
 	// 获取上传的文件
@@ -65,6 +72,32 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"id": uploadedID})
 	logger.S.Infof("文件上传成功。文件ID: %v", uploadedID)
+}
+
+// QuickCheck 抽样哈希快速筛选秒传候选
+func (h *FileHandler) QuickCheck(c *gin.Context) {
+	var req quickCheckReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
+		return
+	}
+	userID, _ := c.Get("userID")
+	matched, err := h.fileService.QuickCheck(c.Request.Context(), userID.(uint), service.QuickCheckReq{
+		FileSize: req.FileSize,
+		HeadHash: req.HeadHash,
+		MidHash:  req.MidHash,
+		TailHash: req.TailHash,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrUserSpaceNotEnough) {
+			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
+			return
+		}
+		response.ServerError(c, "快速校验失败")
+		logger.S.Errorf("快速校验失败：%v", err)
+		return
+	}
+	response.Success(c, matched)
 }
 
 // InstantUpload 秒传
