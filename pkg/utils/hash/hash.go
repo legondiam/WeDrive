@@ -1,7 +1,7 @@
 package hash
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
@@ -30,14 +30,14 @@ func CheckPassword(password, hash string) (bool, error) {
 	return true, nil
 }
 
-// HashFile 计算文件的md5值
+// HashFile 计算文件的sha256值
 func HashFile(fileHeader *multipart.FileHeader) (string, error) {
 	stream, err := fileHeader.Open()
-	defer stream.Close()
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
-	hash := md5.New()
+	defer stream.Close()
+	hash := sha256.New()
 	if _, err = io.Copy(hash, stream); err != nil {
 		return "", errors.WithStack(err)
 	}

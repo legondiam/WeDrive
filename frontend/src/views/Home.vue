@@ -384,7 +384,7 @@ import { useFileStore } from '../stores/file'
 import { useUserStore } from '../stores/user'
 import { uploadFile, instantUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
 import { createShare, downloadShare } from '../api/share'
-import { calculateFileMD5 } from '../lib/md5'
+import { calculateFileSHA256 } from '../lib/sha256'
 
 const CODE_INSTANT_UNAVAILABLE = 3003
 
@@ -445,7 +445,7 @@ const filePondServer = {
     const controller = new AbortController()
     let finalized = false
 
-    calculateFileMD5(file)
+    calculateFileSHA256(file)
       .then(async (fileHash) => {
         if (finalized) return
 
