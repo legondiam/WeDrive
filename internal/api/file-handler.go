@@ -32,6 +32,15 @@ type quickCheckReq struct {
 	TailHash string `json:"tail_hash" binding:"required"`
 }
 
+type initChunkUploadReq struct {
+	FileHash   string `json:"file_hash" binding:"required"`
+	FileName   string `json:"file_name" binding:"required"`
+	FileSize   int64  `json:"file_size" binding:"required"`
+	ParentID   uint   `json:"parent_id"`
+	ChunkSize  int64  `json:"chunk_size" binding:"required"`
+	ChunkCount int    `json:"chunk_count" binding:"required"`
+}
+
 // Upload 上传文件
 func (h *FileHandler) Upload(c *gin.Context) {
 	// 获取上传的文件
@@ -127,6 +136,103 @@ func (h *FileHandler) InstantUpload(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"instant": true, "id": uploadedID})
+}
+
+// InitChunkUpload 初始化分块上传
+func (h *FileHandler) InitChunkUpload(c *gin.Context) {
+	var req initChunkUploadReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
+		return
+	}
+	userID, _ := c.Get("userID")
+	resp, err := h.fileService.InitChunkUpload(c.Request.Context(), userID.(uint), service.ChunkUploadInitReq{
+		FileHash:   req.FileHash,
+		FileName:   req.FileName,
+		FileSize:   req.FileSize,
+		ParentID:   req.ParentID,
+		ChunkSize:  req.ChunkSize,
+		ChunkCount: req.ChunkCount,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrParentFolderInvalid) {
+			response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
+			return
+		}
+		if errors.Is(err, service.ErrUserSpaceNotEnough) {
+			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
+			return
+		}
+		response.ServerError(c, "初始化分块上传失败")
+		logger.S.Errorf("初始化分块上传失败：%v", err)
+		return
+	}
+	response.Success(c, resp)
+}
+
+// UploadChunk 上传分块
+func (h *FileHandler) UploadChunk(c *gin.Context) {
+	chunk, err := c.FormFile("chunk")
+	if err != nil {
+		response.BusinessError(c, response.CodeMissingFile, "请上传分块文件")
+		return
+	}
+	uploadIDRaw := c.PostForm("upload_id")
+	chunkIndexRaw := c.PostForm("chunk_index")
+	uploadID, err := strconv.ParseUint(uploadIDRaw, 10, 64)
+	if err != nil {
+		response.BusinessError(c, response.CodeInvalidParam, "upload_id无效")
+		return
+	}
+	chunkIndex, err := strconv.Atoi(chunkIndexRaw)
+	if err != nil {
+		response.BusinessError(c, response.CodeInvalidParam, "chunk_index无效")
+		return
+	}
+	userID, _ := c.Get("userID")
+	if err := h.fileService.UploadChunk(c.Request.Context(), userID.(uint), uint(uploadID), chunkIndex, chunk); err != nil {
+		if errors.Is(err, service.ErrUploadSessionInvalid) {
+			response.BusinessError(c, response.CodeUploadSessionInvalid, "上传会话无效")
+			return
+		}
+		response.ServerError(c, "分块上传失败")
+		logger.S.Errorf("分块上传失败：%v", err)
+		return
+	}
+	response.Success(c, nil)
+}
+
+// CompleteChunkUpload 完成分块上传
+func (h *FileHandler) CompleteChunkUpload(c *gin.Context) {
+	type completeChunkUploadReq struct {
+		UploadID uint `json:"upload_id" binding:"required"`
+	}
+	var req completeChunkUploadReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
+		return
+	}
+	userID, _ := c.Get("userID")
+	uploadedID, err := h.fileService.CompleteChunkUpload(c.Request.Context(), userID.(uint), req.UploadID)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrUserSpaceNotEnough):
+			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
+		case errors.Is(err, service.ErrUploadSessionInvalid):
+			response.BusinessError(c, response.CodeUploadSessionInvalid, "上传会话无效")
+		case errors.Is(err, service.ErrChunkUploadIncomplete):
+			response.BusinessError(c, response.CodeChunkUploadIncomplete, "仍有分块未上传完成")
+		case errors.Is(err, service.ErrChunkFileHashMismatch):
+			response.BusinessError(c, response.CodeChunkFileHashMismatch, "文件校验失败，请重新上传")
+		case errors.Is(err, service.ErrParentFolderInvalid):
+			response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
+		default:
+			response.ServerError(c, "完成分块上传失败")
+			logger.S.Errorf("完成分块上传失败：%v", err)
+		}
+		return
+	}
+	response.Success(c, gin.H{"id": uploadedID})
 }
 
 // CreateFolder 创建文件夹

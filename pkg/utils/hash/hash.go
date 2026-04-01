@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"io"
 	"mime/multipart"
+	"os"
 
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
@@ -63,18 +64,37 @@ func HashFileWithSamples(fileHeader *multipart.FileHeader) (FileHashes, error) {
 	}
 	defer stream.Close()
 
-	//计算全量哈希
-	fullHash := sha256.New()
-	if _, err = io.Copy(fullHash, stream); err != nil {
-		return FileHashes{}, errors.WithStack(err)
-	}
-	//判断能否随机读取
 	readerAt, ok := stream.(io.ReaderAt)
 	if !ok {
 		return FileHashes{}, errors.New("文件流不支持随机读取")
 	}
 
-	size := fileHeader.Size
+	return HashReaderWithSamples(stream, readerAt, fileHeader.Size)
+}
+
+// HashPathWithSamples 计算本地文件完整sha256与抽样sha256
+func HashPathWithSamples(filePath string) (FileHashes, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return FileHashes{}, errors.WithStack(err)
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return FileHashes{}, errors.WithStack(err)
+	}
+
+	return HashReaderWithSamples(file, file, info.Size())
+}
+
+// HashReaderWithSamples 计算支持随机读取对象的完整sha256与抽样sha256
+func HashReaderWithSamples(reader io.Reader, readerAt io.ReaderAt, size int64) (FileHashes, error) {
+	fullHash := sha256.New()
+	if _, err := io.Copy(fullHash, reader); err != nil {
+		return FileHashes{}, errors.WithStack(err)
+	}
+
 	//抽样函数
 	readSample := func(offset int64) ([]byte, error) {
 		if size == 0 {

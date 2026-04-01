@@ -8,11 +8,16 @@ import (
 	"WeDrive/pkg/utils/convert"
 	"WeDrive/pkg/utils/hash"
 	"context"
+	"encoding/json"
 	"fmt"
 	"mime/multipart"
 	"path"
+	"slices"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/minio/minio-go/v7"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -21,6 +26,14 @@ var ErrUserSpaceNotEnough = errors.New("用户空间不足")
 var ErrFileNotFound = errors.New("文件不存在")
 var ErrParentFolderInvalid = errors.New("父文件夹不合法")
 var ErrInstantUploadUnavailable = errors.New("秒传条件失效")
+var ErrUploadSessionInvalid = errors.New("上传会话无效")
+var ErrChunkUploadIncomplete = errors.New("分块上传未完成")
+var ErrChunkFileHashMismatch = errors.New("文件哈希不匹配")
+
+const (
+	uploadSessionStatusPending   = "pending"
+	uploadSessionStatusCompleted = "completed"
+)
 
 type FileService struct {
 	fileRepo *repository.FileRepo
@@ -62,8 +75,79 @@ type QuickCheckReq struct {
 	TailHash string
 }
 
+type ChunkUploadInitReq struct {
+	FileHash   string
+	FileName   string
+	FileSize   int64
+	ParentID   uint
+	ChunkSize  int64
+	ChunkCount int
+}
+
+type ChunkUploadInitResp struct {
+	UploadID       uint  `json:"upload_id,omitempty"`
+	UploadedChunks []int `json:"uploaded_chunks,omitempty"`
+}
+
 func NewFileService(fileRepo *repository.FileRepo, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
 	return &FileService{fileRepo: fileRepo, storage: storage, db: db, userRepo: userRepo}
+}
+
+// parseUploadedChunks 解析已上传分块
+func parseUploadedChunks(raw string) ([]int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return []int{}, nil
+	}
+	var uploaded []int
+	if err := json.Unmarshal([]byte(raw), &uploaded); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	slices.Sort(uploaded)
+	return uploaded, nil
+}
+
+// encodeUploadedChunks 编码已上传分块
+func encodeUploadedChunks(chunks []int) (string, error) {
+	slices.Sort(chunks)
+	data, err := json.Marshal(chunks)
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+	return string(data), nil
+}
+
+// addUploadedChunk 添加已上传分块
+func addUploadedChunk(chunks []int, chunkIndex int) []int {
+	for _, item := range chunks {
+		if item == chunkIndex {
+			return chunks
+		}
+	}
+	chunks = append(chunks, chunkIndex)
+	slices.Sort(chunks)
+	return chunks
+}
+
+// uploadedChunksFromParts 从minio对象分块列表中获取已上传分块
+func uploadedChunksFromParts(parts []minio.ObjectPart) []int {
+	chunks := make([]int, 0, len(parts))
+	for _, part := range parts {
+		if part.PartNumber <= 0 {
+			continue
+		}
+		chunks = append(chunks, part.PartNumber-1)
+	}
+	slices.Sort(chunks)
+	return chunks
+}
+
+// isDuplicateKeyError 判断是否为重复键错误
+func isDuplicateKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "duplicate entry") || strings.Contains(message, "unique constraint")
 }
 
 // checkParentFolder 检查父文件夹是否合法
@@ -148,6 +232,278 @@ func (s *FileService) createInstantUploadRecord(ctx context.Context, tx *gorm.DB
 		return 0, errors.WithMessage(err, "更新用户空间失败")
 	}
 	return newUserFile.ID, nil
+}
+
+// InitChunkUpload 初始化分块上传
+func (s *FileService) InitChunkUpload(ctx context.Context, userID uint, req ChunkUploadInitReq) (ChunkUploadInitResp, error) {
+	if req.FileHash == "" || req.FileName == "" || req.FileSize <= 0 || req.ChunkSize <= 0 || req.ChunkCount <= 0 {
+		return ChunkUploadInitResp{}, nil
+	}
+	if err := s.checkParentFolder(ctx, userID, req.ParentID); err != nil {
+		return ChunkUploadInitResp{}, errors.WithMessage(err, "父文件夹不合法")
+	}
+	user, err := s.userRepo.GetUserInfo(ctx, userID)
+	if err != nil {
+		return ChunkUploadInitResp{}, errors.WithMessage(err, "获取用户信息失败")
+	}
+	if user.UsedSpace+req.FileSize > user.TotalSpace {
+		return ChunkUploadInitResp{}, ErrUserSpaceNotEnough
+	}
+
+	session, err := s.fileRepo.GetPendingUploadSession(ctx, userID, req.ParentID, req.FileHash)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return ChunkUploadInitResp{}, errors.WithMessage(err, "查询上传会话失败")
+	}
+	if err == nil {
+		if session.FileSize == req.FileSize && session.ChunkSize == req.ChunkSize && session.ChunkCount == req.ChunkCount && session.ObjectName != "" && session.StorageUploadID != "" {
+			parts, listErr := s.storage.ListObjectParts(ctx, session.ObjectName, session.StorageUploadID)
+			if listErr != nil {
+				return ChunkUploadInitResp{}, errors.WithMessage(listErr, "查询已上传分块失败")
+			}
+			uploadedChunks := uploadedChunksFromParts(parts)
+			session.UploadedChunks, err = encodeUploadedChunks(uploadedChunks)
+			if err != nil {
+				return ChunkUploadInitResp{}, errors.WithMessage(err, "编码已上传分块失败")
+			}
+			if saveErr := s.fileRepo.SaveUploadSession(ctx, session); saveErr != nil {
+				return ChunkUploadInitResp{}, errors.WithMessage(saveErr, "同步上传会话失败")
+			}
+			return ChunkUploadInitResp{
+				UploadID:       session.ID,
+				UploadedChunks: uploadedChunks,
+			}, nil
+		}
+	}
+
+	objectName := fmt.Sprintf("multipart/%s%s", uuid.NewString(), path.Ext(req.FileName))
+	uploadID, err := s.storage.NewMultipartUpload(ctx, objectName)
+	if err != nil {
+		return ChunkUploadInitResp{}, errors.WithMessage(err, "初始化对象分块上传失败")
+	}
+
+	newSession := &model.UploadSession{
+		UserID:          userID,
+		ParentID:        req.ParentID,
+		FileHash:        req.FileHash,
+		FileName:        req.FileName,
+		FileSize:        req.FileSize,
+		ChunkSize:       req.ChunkSize,
+		ChunkCount:      req.ChunkCount,
+		ObjectName:      objectName,
+		StorageUploadID: uploadID,
+		UploadedChunks:  "[]",
+		Status:          uploadSessionStatusPending,
+	}
+	if err := s.fileRepo.CreateUploadSession(ctx, newSession); err != nil {
+		_ = s.storage.AbortMultipartUpload(ctx, objectName, uploadID)
+		return ChunkUploadInitResp{}, errors.WithMessage(err, "创建上传会话失败")
+	}
+	return ChunkUploadInitResp{
+		UploadID:       newSession.ID,
+		UploadedChunks: []int{},
+	}, nil
+}
+
+// UploadChunk 上传分块
+func (s *FileService) UploadChunk(ctx context.Context, userID uint, sessionID uint, chunkIndex int, chunk *multipart.FileHeader) error {
+	if chunk == nil || chunkIndex < 0 {
+		return ErrUploadSessionInvalid
+	}
+	session, err := s.fileRepo.GetUploadSessionByID(ctx, sessionID, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrUploadSessionInvalid
+		}
+		return errors.WithMessage(err, "查询上传会话失败")
+	}
+	if session.Status != uploadSessionStatusPending || chunkIndex >= session.ChunkCount {
+		return ErrUploadSessionInvalid
+	}
+
+	src, err := chunk.Open()
+	if err != nil {
+		return errors.WithMessage(err, "打开分块失败")
+	}
+	defer src.Close()
+
+	partNumber := chunkIndex + 1
+	if _, err := s.storage.UploadObjectPart(ctx, session.ObjectName, session.StorageUploadID, partNumber, src, chunk.Size); err != nil {
+		return errors.WithMessage(err, "上传对象分块失败")
+	}
+
+	uploadedChunks, err := parseUploadedChunks(session.UploadedChunks)
+	if err != nil {
+		return errors.WithMessage(err, "解析已上传分块失败")
+	}
+	uploadedChunks = addUploadedChunk(uploadedChunks, chunkIndex)
+	session.UploadedChunks, err = encodeUploadedChunks(uploadedChunks)
+	if err != nil {
+		return errors.WithMessage(err, "更新已上传分块失败")
+	}
+	if err := s.fileRepo.SaveUploadSession(ctx, session); err != nil {
+		return errors.WithMessage(err, "保存上传会话失败")
+	}
+	return nil
+}
+
+// CompleteChunkUpload 完成分块上传
+func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sessionID uint) (uint, error) {
+	session, err := s.fileRepo.GetUploadSessionByID(ctx, sessionID, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, ErrUploadSessionInvalid
+		}
+		return 0, errors.WithMessage(err, "查询上传会话失败")
+	}
+	if session.Status != uploadSessionStatusPending {
+		return 0, ErrUploadSessionInvalid
+	}
+
+	parts, err := s.storage.ListObjectParts(ctx, session.ObjectName, session.StorageUploadID)
+	if err != nil {
+		return 0, errors.WithMessage(err, "查询对象分块失败")
+	}
+	uploadedChunks := uploadedChunksFromParts(parts)
+	if len(uploadedChunks) != session.ChunkCount {
+		return 0, ErrChunkUploadIncomplete
+	}
+	for index := 0; index < session.ChunkCount; index++ {
+		if !slices.Contains(uploadedChunks, index) {
+			return 0, ErrChunkUploadIncomplete
+		}
+	}
+
+	if err := s.checkParentFolder(ctx, userID, session.ParentID); err != nil {
+		return 0, errors.WithMessage(err, "父文件夹不合法")
+	}
+	user, err := s.userRepo.GetUserInfo(ctx, userID)
+	if err != nil {
+		return 0, errors.WithMessage(err, "获取用户信息失败")
+	}
+	if user.UsedSpace+session.FileSize > user.TotalSpace {
+		return 0, ErrUserSpaceNotEnough
+	}
+
+	completeParts := make([]minio.CompletePart, 0, len(parts))
+	for _, part := range parts {
+		completeParts = append(completeParts, minio.CompletePart{
+			PartNumber: part.PartNumber,
+			ETag:       part.ETag,
+		})
+	}
+	if err := s.storage.CompleteMultipartUpload(ctx, session.ObjectName, session.StorageUploadID, completeParts); err != nil {
+		return 0, errors.WithMessage(err, "完成对象分块上传失败")
+	}
+
+	object, err := s.storage.GetObject(ctx, session.ObjectName)
+	if err != nil {
+		_ = s.storage.DeleteFile(ctx, session.ObjectName)
+		_ = s.fileRepo.DeleteUploadSession(ctx, session.ID)
+		return 0, errors.WithMessage(err, "打开合并对象失败")
+	}
+	defer object.Close()
+	objectInfo, err := object.Stat()
+	if err != nil {
+		_ = s.storage.DeleteFile(ctx, session.ObjectName)
+		_ = s.fileRepo.DeleteUploadSession(ctx, session.ID)
+		return 0, errors.WithMessage(err, "读取对象信息失败")
+	}
+	fileHashes, err := hash.HashReaderWithSamples(object, object, objectInfo.Size)
+	if err != nil {
+		_ = s.storage.DeleteFile(ctx, session.ObjectName)
+		_ = s.fileRepo.DeleteUploadSession(ctx, session.ID)
+		return 0, errors.WithMessage(err, "计算合并文件哈希失败")
+	}
+	if fileHashes.Full != session.FileHash {
+		_ = s.storage.DeleteFile(ctx, session.ObjectName)
+		_ = s.fileRepo.DeleteUploadSession(ctx, session.ID)
+		return 0, ErrChunkFileHashMismatch
+	}
+	shouldCleanMinio := true
+	defer func() {
+		if shouldCleanMinio {
+			_ = s.storage.DeleteFile(ctx, session.ObjectName)
+		}
+	}()
+
+	var uploadedID uint
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		lockedSession, lockErr := s.fileRepo.GetUploadSessionByIDForUpdate(ctx, sessionID, userID, tx)
+		if lockErr != nil {
+			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
+				return ErrUploadSessionInvalid
+			}
+			return errors.WithMessage(lockErr, "锁定上传会话失败")
+		}
+		if lockedSession.Status != uploadSessionStatusPending {
+			return ErrUploadSessionInvalid
+		}
+
+		fileStore, findErr := s.fileRepo.GetFileByHashForUpdate(ctx, session.FileHash, tx)
+		switch {
+		case findErr == nil:
+			uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, session.ParentID, session.FileName, fileStore.FileSize, fileStore)
+			if err != nil {
+				return err
+			}
+		case errors.Is(findErr, gorm.ErrRecordNotFound):
+			newFileStore := &model.FileStore{
+				FileHash: session.FileHash,
+				FileName: session.FileName,
+				FileSize: session.FileSize,
+				FileAddr: session.ObjectName,
+				HeadHash: fileHashes.Head,
+				MidHash:  fileHashes.Mid,
+				TailHash: fileHashes.Tail,
+			}
+			if createErr := s.fileRepo.CreateFileStore(ctx, newFileStore, tx); createErr != nil {
+				if !isDuplicateKeyError(createErr) {
+					return errors.WithMessage(createErr, "文件元数据存储失败")
+				}
+				fileStore, createErr = s.fileRepo.GetFileByHashForUpdate(ctx, session.FileHash, tx)
+				if createErr != nil {
+					return errors.WithMessage(createErr, "查询并发写入的文件失败")
+				}
+				uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, session.ParentID, session.FileName, fileStore.FileSize, fileStore)
+				if err != nil {
+					return err
+				}
+				break
+			}
+			newUserFile := &model.UserFile{
+				UserId:      userID,
+				FileStoreID: &newFileStore.ID,
+				FileName:    session.FileName,
+				ParentID:    session.ParentID,
+			}
+			if err := s.fileRepo.CreateUserFile(ctx, newUserFile, tx); err != nil {
+				return errors.WithMessage(err, "用户文件数据存储失败")
+			}
+			uploadedID = newUserFile.ID
+			if err := s.userRepo.UpdateUserSpace(ctx, userID, session.FileSize, tx); err != nil {
+				return errors.WithMessage(err, "更新用户空间失败")
+			}
+		default:
+			return errors.WithMessage(findErr, "查询文件失败")
+		}
+
+		lockedSession.Status = uploadSessionStatusCompleted
+		if err := s.fileRepo.SaveUploadSession(ctx, lockedSession, tx); err != nil {
+			return errors.WithMessage(err, "更新上传会话状态失败")
+		}
+		if err := s.fileRepo.DeleteUploadSession(ctx, lockedSession.ID, tx); err != nil {
+			return errors.WithMessage(err, "清理上传会话失败")
+		}
+		return nil
+	})
+	if err != nil {
+		_ = s.fileRepo.DeleteUploadSession(ctx, session.ID)
+		return 0, errors.WithMessage(err, "完成分块上传失败")
+	}
+
+	shouldCleanMinio = false
+	logger.S.Infof("分块上传完成, uploadID: %d, fileHash: %s, userID: %d", sessionID, session.FileHash, userID)
+	return uploadedID, nil
 }
 
 // QuickCheck 抽样哈希快速判断是否可能秒传

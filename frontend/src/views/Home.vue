@@ -382,11 +382,13 @@ import DropdownMenuRadioItem from '@/components/ui/dropdown-menu/DropdownMenuRad
 import ShareExtractIcon from '@/components/icons/ShareExtractIcon.vue'
 import { useFileStore } from '../stores/file'
 import { useUserStore } from '../stores/user'
-import { uploadFile, quickCheck, instantUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
+import { uploadFile, quickCheck, instantUpload, initChunkUpload, uploadChunk, completeChunkUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
 import { createShare, downloadShare } from '../api/share'
 import { calculateFileSHA256, calculateFileSampleSHA256 } from '../lib/sha256'
 
 const CODE_INSTANT_UNAVAILABLE = 3003
+const CHUNK_UPLOAD_THRESHOLD = 16 * 1024 * 1024
+const CHUNK_SIZE = 5 * 1024 * 1024
 
 const FilePond = vueFilePond()
 const fileStore = useFileStore()
@@ -440,6 +442,10 @@ const deleteDialogDescription = computed(() => {
   return `确定要删除「${currentTarget?.file_name || ''}」吗？删除后可在回收站恢复。`
 })
 
+function shouldUseChunkUpload(file) {
+  return file.size >= CHUNK_UPLOAD_THRESHOLD
+}
+
 const filePondServer = {
   process: (fieldName, file, metadata, load, error, progress, abort) => {
     const controller = new AbortController()
@@ -466,18 +472,19 @@ const filePondServer = {
     calculateFileSampleSHA256(file)
       .then(async (sampleHashes) => {
         if (finalized) return
+        let fullFileHash = ''
 
         const quickCheckRes = await quickCheck(sampleHashes)
         if (finalized) return
 
         if (quickCheckRes?.data === true) {
-          const fileHash = await calculateFileSHA256(file)
+          fullFileHash = await calculateFileSHA256(file)
           if (finalized) return
 
           let instantRes = null
           try {
             instantRes = await instantUpload({
-              file_hash: fileHash,
+              file_hash: fullFileHash,
               file_name: file.name,
               file_size: file.size,
               parent_id: fileStore.currentParentId,
@@ -492,6 +499,63 @@ const filePondServer = {
             finishUpload(uploadedId, '秒传成功', { instant: true })
             return
           }
+        }
+
+        if (shouldUseChunkUpload(file)) {
+          if (!fullFileHash) {
+            fullFileHash = await calculateFileSHA256(file)
+            if (finalized) return
+          }
+          const chunkCount = Math.ceil(file.size / CHUNK_SIZE)
+          const initRes = await initChunkUpload({
+            file_hash: fullFileHash,
+            file_name: file.name,
+            file_size: file.size,
+            parent_id: fileStore.currentParentId,
+            chunk_size: CHUNK_SIZE,
+            chunk_count: chunkCount,
+          })
+          if (finalized) return
+
+          const uploadId = initRes?.data?.upload_id
+          if (!uploadId) {
+            throw new Error('分块上传初始化失败')
+          }
+          const uploadedChunks = new Set(initRes?.data?.uploaded_chunks || [])
+          const uploadChunksWithResume = async () => {
+            for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+              if (uploadedChunks.has(chunkIndex)) {
+                const end = Math.min(file.size, (chunkIndex + 1) * CHUNK_SIZE)
+                progress(true, end, file.size || 1)
+                continue
+              }
+              const start = chunkIndex * CHUNK_SIZE
+              const end = Math.min(file.size, start + CHUNK_SIZE)
+              const chunkBlob = file.slice(start, end)
+
+              await uploadChunk({
+                upload_id: uploadId,
+                chunk_index: chunkIndex,
+                chunk: chunkBlob,
+              }, (event) => {
+                if (finalized) return
+                const currentLoaded = event.loaded || 0
+                const uploadedBefore = start
+                const total = file.size || 1
+                progress(true, Math.min(uploadedBefore + currentLoaded, total), total)
+              }, controller.signal)
+
+              if (finalized) return null
+              progress(true, end, file.size || 1)
+            }
+
+            const completeRes = await completeChunkUpload({ upload_id: uploadId })
+            return completeRes?.data?.id
+          }
+          const uploadedId = await uploadChunksWithResume()
+          if (finalized || !uploadedId) return
+          finishUpload(uploadedId, '上传成功')
+          return
         }
 
         return uploadFile(file, fileStore.currentParentId, (event) => {

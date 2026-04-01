@@ -21,6 +21,66 @@ func NewFileRepo(db *gorm.DB) *FileRepo {
 	}
 }
 
+// CreateUploadSession 创建分块上传会话
+func (r *FileRepo) CreateUploadSession(ctx context.Context, session *model.UploadSession, tx ...*gorm.DB) error {
+	db := r.db
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	return db.WithContext(ctx).Create(session).Error
+}
+
+// SaveUploadSession 保存分块上传会话
+func (r *FileRepo) SaveUploadSession(ctx context.Context, session *model.UploadSession, tx ...*gorm.DB) error {
+	db := r.db
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	return db.WithContext(ctx).Save(session).Error
+}
+
+// GetPendingUploadSession 获取待完成的分块上传会话
+func (r *FileRepo) GetPendingUploadSession(ctx context.Context, userID uint, parentID uint, fileHash string) (*model.UploadSession, error) {
+	var session model.UploadSession
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND parent_id = ? AND file_hash = ? AND status = ?", userID, parentID, fileHash, "pending").
+		Order("id DESC").
+		First(&session).Error
+	return &session, errors.WithStack(err)
+}
+
+// GetUploadSessionByID 获取分块上传会话
+func (r *FileRepo) GetUploadSessionByID(ctx context.Context, sessionID uint, userID uint, tx ...*gorm.DB) (*model.UploadSession, error) {
+	db := r.db
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	var session model.UploadSession
+	err := db.WithContext(ctx).
+		Where("id = ? AND user_id = ?", sessionID, userID).
+		First(&session).Error
+	return &session, errors.WithStack(err)
+}
+
+// GetUploadSessionByIDForUpdate 获取分块上传会话并加锁
+func (r *FileRepo) GetUploadSessionByIDForUpdate(ctx context.Context, sessionID uint, userID uint, tx *gorm.DB) (*model.UploadSession, error) {
+	var session model.UploadSession
+	err := tx.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND user_id = ?", sessionID, userID).
+		First(&session).Error
+	return &session, errors.WithStack(err)
+}
+
+// DeleteUploadSession 删除分块上传会话
+func (r *FileRepo) DeleteUploadSession(ctx context.Context, sessionID uint, tx ...*gorm.DB) error {
+	db := r.db
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	return db.WithContext(ctx).Delete(&model.UploadSession{}, sessionID).Error
+}
+
 // CreateFileStore 插入文件元数据
 func (r *FileRepo) CreateFileStore(ctx context.Context, file *model.FileStore, tx ...*gorm.DB) error {
 	db := r.db

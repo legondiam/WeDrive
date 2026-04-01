@@ -23,6 +23,26 @@ export function quickCheck(payload) {
   return request.post('/file/quick-check', payload)
 }
 
+export function initChunkUpload(payload) {
+  return request.post('/file/upload/init', payload)
+}
+
+export function uploadChunk(payload, onProgress, signal) {
+  const formData = new FormData()
+  formData.append('upload_id', payload.upload_id)
+  formData.append('chunk_index', payload.chunk_index)
+  formData.append('chunk', payload.chunk)
+  return request.post('/file/upload/chunk', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: onProgress,
+    signal,
+  })
+}
+
+export function completeChunkUpload(payload) {
+  return request.post('/file/upload/complete', payload)
+}
+
 export function createFolder(name, parentId = 0) {
   return request.post('/file/upload-folder', { name, parent_id: parentId })
 }

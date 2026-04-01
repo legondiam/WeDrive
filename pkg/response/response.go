@@ -22,9 +22,12 @@ const (
 	CodeRefreshTokenMissing = 2003 // refreshToken不存在/无效
 
 	// 文件模块
-	CodeUserSpaceNotEnough = 3001 // 用户空间不足
-	CodeFileNotFound       = 3002 // 文件不存在
-	CodeInstantUnavailable = 3003 // 秒传条件失效
+	CodeUserSpaceNotEnough    = 3001 // 用户空间不足
+	CodeFileNotFound          = 3002 // 文件不存在
+	CodeInstantUnavailable    = 3003 // 秒传条件失效
+	CodeUploadSessionInvalid  = 3004 // 上传会话无效
+	CodeChunkUploadIncomplete = 3005 // 分块上传未完成
+	CodeChunkFileHashMismatch = 3006 // 分块文件校验失败
 
 	// 分享模块
 	CodeShareNotFound   = 4001 // 分享不存在

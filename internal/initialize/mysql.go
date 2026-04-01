@@ -37,5 +37,9 @@ func MysqlInit() (*gorm.DB, error) {
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
+	err = dbconn.AutoMigrate(&model.UploadSession{})
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
 	return dbconn, nil
 }
