@@ -7,7 +7,8 @@ import (
 // FileStore 文件池
 type FileStore struct {
 	gorm.Model
-	FileHash string `gorm:"type:varchar(128);uniqueIndex"`
+	HashType string `gorm:"type:varchar(64);uniqueIndex:idx_file_store_identity,priority:1"`
+	FileHash string `gorm:"type:varchar(128);uniqueIndex:idx_file_store_identity,priority:2"`
 	FileName string `gorm:"type:varchar(255)"`
 	FileSize int64  `gorm:"index:idx_file_store_sample,priority:1"`
 	FileAddr string `gorm:"type:varchar(512)"`

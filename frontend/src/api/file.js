@@ -1,4 +1,5 @@
 import request from './request'
+import axios from 'axios'
 
 export function getFileList(parentId = 0) {
   return request.get('/file/list', { params: { parent_id: parentId } })
@@ -27,13 +28,17 @@ export function initChunkUpload(payload) {
   return request.post('/file/upload/init', payload)
 }
 
-export function uploadChunk(payload, onProgress, signal) {
-  const formData = new FormData()
-  formData.append('upload_id', payload.upload_id)
-  formData.append('chunk_index', payload.chunk_index)
-  formData.append('chunk', payload.chunk)
-  return request.post('/file/upload/chunk', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+export function signPartUpload(payload) {
+  return request.post('/file/upload/sign-part', payload)
+}
+
+export function reportUploadedPart(payload) {
+  return request.post('/file/upload/report-part', payload)
+}
+
+export function uploadChunkDirect(uploadUrl, chunk, headers = {}, onProgress, signal) {
+  return axios.put(uploadUrl, chunk, {
+    headers,
     onUploadProgress: onProgress,
     signal,
   })

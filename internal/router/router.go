@@ -29,6 +29,8 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 		privateGroup.POST("/file/quick-check", fileHandler.QuickCheck)
 		privateGroup.POST("/file/instant-upload", fileHandler.InstantUpload)
 		privateGroup.POST("/file/upload/init", fileHandler.InitChunkUpload)
+		privateGroup.POST("/file/upload/sign-part", fileHandler.SignPartUpload)
+		privateGroup.POST("/file/upload/report-part", fileHandler.ReportUploadedPart)
 		privateGroup.POST("/file/upload/complete", fileHandler.CompleteChunkUpload)
 		privateGroup.GET("/file/list", fileHandler.GetUserFile)
 		privateGroup.DELETE("/file/delete/:ID", fileHandler.Delete)
@@ -49,7 +51,6 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 	timeoutGroup.Use(middleware.AuthMiddleware())
 	{
 		timeoutGroup.POST("/file/upload", fileHandler.Upload)
-		timeoutGroup.POST("/file/upload/chunk", fileHandler.UploadChunk)
 	}
 
 	adminGroup := privateGroup.Group("/admin")

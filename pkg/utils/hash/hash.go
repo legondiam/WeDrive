@@ -2,6 +2,7 @@ package hash
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"io"
 	"mime/multipart"
@@ -12,12 +13,18 @@ import (
 )
 
 const sampleChunkSize int64 = 1 << 20
+const ChunkIdentitySize int64 = 5 << 20
 
 type FileHashes struct {
 	Full string
 	Head string
 	Mid  string
 	Tail string
+}
+
+type ChunkHash struct {
+	PartNumber int
+	Hash       string
 }
 
 // HashPassword 加密密码
@@ -150,4 +157,71 @@ func HashReaderWithSamples(reader io.Reader, readerAt io.ReaderAt, size int64) (
 		Mid:  hashBytes(midBytes),
 		Tail: hashBytes(tailBytes),
 	}, nil
+}
+
+// ChunkHashesFromReaderAt 计算固定分块哈希
+func ChunkHashesFromReaderAt(readerAt io.ReaderAt, size int64, chunkSize int64) ([]ChunkHash, error) {
+	if chunkSize <= 0 {
+		return nil, errors.New("chunk size must be positive")
+	}
+	if size == 0 {
+		return []ChunkHash{{PartNumber: 1, Hash: hashBytes([]byte{})}}, nil
+	}
+
+	partCount := int((size + chunkSize - 1) / chunkSize)
+	parts := make([]ChunkHash, 0, partCount)
+	for partNumber := 1; partNumber <= partCount; partNumber++ {
+		offset := int64(partNumber-1) * chunkSize
+		length := chunkSize
+		if offset+length > size {
+			length = size - offset
+		}
+		buf := make([]byte, length)
+		if _, err := readerAt.ReadAt(buf, offset); err != nil && err != io.EOF {
+			return nil, errors.WithStack(err)
+		}
+		parts = append(parts, ChunkHash{
+			PartNumber: partNumber,
+			Hash:       hashBytes(buf),
+		})
+	}
+	return parts, nil
+}
+
+// ChunkHashesFromFileHeader 计算上传文件分块哈希
+func ChunkHashesFromFileHeader(fileHeader *multipart.FileHeader, chunkSize int64) ([]ChunkHash, error) {
+	stream, err := fileHeader.Open()
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	defer stream.Close()
+
+	readerAt, ok := stream.(io.ReaderAt)
+	if !ok {
+		return nil, errors.New("文件流不支持随机读取")
+	}
+	return ChunkHashesFromReaderAt(readerAt, fileHeader.Size, chunkSize)
+}
+
+// AggregateChunkHash 计算分块聚合哈希
+func AggregateChunkHash(parts []ChunkHash, fileSize int64) (string, error) {
+	sum := sha256.New()
+	for index, part := range parts {
+		if part.PartNumber != index+1 {
+			return "", errors.New("分块顺序不连续")
+		}
+		raw, err := hex.DecodeString(part.Hash)
+		if err != nil {
+			return "", errors.WithStack(err)
+		}
+		if _, err := sum.Write(raw); err != nil {
+			return "", errors.WithStack(err)
+		}
+	}
+	var sizeBuf [8]byte
+	binary.BigEndian.PutUint64(sizeBuf[:], uint64(fileSize))
+	if _, err := sum.Write(sizeBuf[:]); err != nil {
+		return "", errors.WithStack(err)
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
 }

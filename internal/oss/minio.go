@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -19,6 +20,11 @@ import (
 
 type Storage struct {
 	client *minio.Client
+}
+
+type CompletePart struct {
+	PartNumber int
+	ETag       string
 }
 
 func NewStorage(client *minio.Client) *Storage {
@@ -58,6 +64,26 @@ func (s *Storage) NewMultipartUpload(ctx context.Context, objectName string) (st
 	return uploadID, nil
 }
 
+// PresignUploadPart 生成分块直传URL
+func (s *Storage) PresignUploadPart(ctx context.Context, objectName string, uploadID string, partNumber int, checksumSHA256Base64 string, expires time.Duration) (string, map[string]string, error) {
+	reqParams := make(url.Values)
+	reqParams.Set("uploadId", uploadID)
+	reqParams.Set("partNumber", strconv.Itoa(partNumber))
+
+	extraHeaders := make(http.Header)
+	headers := make(map[string]string)
+	if checksumSHA256Base64 != "" {
+		extraHeaders.Set("x-amz-checksum-sha256", checksumSHA256Base64)
+		headers["x-amz-checksum-sha256"] = checksumSHA256Base64
+	}
+
+	signedURL, err := s.client.PresignHeader(ctx, http.MethodPut, config.GlobalConf.Minio.BucketName, objectName, expires, reqParams, extraHeaders)
+	if err != nil {
+		return "", nil, errors.WithStack(err)
+	}
+	return signedURL.String(), headers, nil
+}
+
 // UploadObjectPart 上传对象分块
 func (s *Storage) UploadObjectPart(ctx context.Context, objectName string, uploadID string, partNumber int, reader io.Reader, size int64) (minio.ObjectPart, error) {
 	part, err := s.core().PutObjectPart(ctx, config.GlobalConf.Minio.BucketName, objectName, uploadID, partNumber, reader, size, minio.PutObjectPartOptions{})
@@ -86,8 +112,15 @@ func (s *Storage) ListObjectParts(ctx context.Context, objectName string, upload
 }
 
 // CompleteMultipartUpload 完成分块上传
-func (s *Storage) CompleteMultipartUpload(ctx context.Context, objectName string, uploadID string, parts []minio.CompletePart) error {
-	_, err := s.core().CompleteMultipartUpload(ctx, config.GlobalConf.Minio.BucketName, objectName, uploadID, parts, minio.PutObjectOptions{})
+func (s *Storage) CompleteMultipartUpload(ctx context.Context, objectName string, uploadID string, parts []CompletePart) error {
+	completeParts := make([]minio.CompletePart, 0, len(parts))
+	for _, part := range parts {
+		completeParts = append(completeParts, minio.CompletePart{
+			PartNumber: part.PartNumber,
+			ETag:       part.ETag,
+		})
+	}
+	_, err := s.core().CompleteMultipartUpload(ctx, config.GlobalConf.Minio.BucketName, objectName, uploadID, completeParts, minio.PutObjectOptions{})
 	if err != nil {
 		return errors.WithStack(err)
 	}

@@ -8,16 +8,13 @@ import (
 	"WeDrive/pkg/utils/convert"
 	"WeDrive/pkg/utils/hash"
 	"context"
-	"encoding/json"
 	"fmt"
 	"mime/multipart"
 	"path"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/minio/minio-go/v7"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -29,17 +26,23 @@ var ErrInstantUploadUnavailable = errors.New("秒传条件失效")
 var ErrUploadSessionInvalid = errors.New("上传会话无效")
 var ErrChunkUploadIncomplete = errors.New("分块上传未完成")
 var ErrChunkFileHashMismatch = errors.New("文件哈希不匹配")
+var ErrUnsupportedHashType = errors.New("不支持的哈希规则")
+var ErrUploadRequestInvalid = errors.New("上传请求无效")
 
 const (
 	uploadSessionStatusPending   = "pending"
 	uploadSessionStatusCompleted = "completed"
+	hashTypeChunkAgg5M           = "chunk_agg_5m_sha256_v1"
+	uploadStateExpire            = 24 * time.Hour
+	partUploadURLExpire          = 15 * time.Minute
 )
 
 type FileService struct {
-	fileRepo *repository.FileRepo
-	userRepo *repository.UserRepo
-	storage  *oss.Storage
-	db       *gorm.DB
+	fileRepo    *repository.FileRepo
+	uploadCache *repository.UploadCacheRepo
+	userRepo    *repository.UserRepo
+	storage     *oss.Storage
+	db          *gorm.DB
 }
 
 type RecycleFileResp struct {
@@ -76,12 +79,16 @@ type QuickCheckReq struct {
 }
 
 type ChunkUploadInitReq struct {
+	HashType   string
 	FileHash   string
 	FileName   string
 	FileSize   int64
 	ParentID   uint
 	ChunkSize  int64
 	ChunkCount int
+	HeadHash   string
+	MidHash    string
+	TailHash   string
 }
 
 type ChunkUploadInitResp struct {
@@ -89,56 +96,27 @@ type ChunkUploadInitResp struct {
 	UploadedChunks []int `json:"uploaded_chunks,omitempty"`
 }
 
-func NewFileService(fileRepo *repository.FileRepo, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
-	return &FileService{fileRepo: fileRepo, storage: storage, db: db, userRepo: userRepo}
+type SignPartReq struct {
+	UploadID             uint
+	PartNumber           int
+	ChunkHash            string
+	ChecksumSHA256Base64 string
 }
 
-// parseUploadedChunks 解析已上传分块
-func parseUploadedChunks(raw string) ([]int, error) {
-	if strings.TrimSpace(raw) == "" {
-		return []int{}, nil
-	}
-	var uploaded []int
-	if err := json.Unmarshal([]byte(raw), &uploaded); err != nil {
-		return nil, errors.WithStack(err)
-	}
-	slices.Sort(uploaded)
-	return uploaded, nil
+type SignedPartResp struct {
+	PartNumber int               `json:"part_number"`
+	UploadURL  string            `json:"upload_url"`
+	Headers    map[string]string `json:"headers,omitempty"`
 }
 
-// encodeUploadedChunks 编码已上传分块
-func encodeUploadedChunks(chunks []int) (string, error) {
-	slices.Sort(chunks)
-	data, err := json.Marshal(chunks)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	return string(data), nil
+type ReportUploadedPartReq struct {
+	UploadID   uint
+	PartNumber int
+	ETag       string
 }
 
-// addUploadedChunk 添加已上传分块
-func addUploadedChunk(chunks []int, chunkIndex int) []int {
-	for _, item := range chunks {
-		if item == chunkIndex {
-			return chunks
-		}
-	}
-	chunks = append(chunks, chunkIndex)
-	slices.Sort(chunks)
-	return chunks
-}
-
-// uploadedChunksFromParts 从minio对象分块列表中获取已上传分块
-func uploadedChunksFromParts(parts []minio.ObjectPart) []int {
-	chunks := make([]int, 0, len(parts))
-	for _, part := range parts {
-		if part.PartNumber <= 0 {
-			continue
-		}
-		chunks = append(chunks, part.PartNumber-1)
-	}
-	slices.Sort(chunks)
-	return chunks
+func NewFileService(fileRepo *repository.FileRepo, uploadCache *repository.UploadCacheRepo, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
+	return &FileService{fileRepo: fileRepo, uploadCache: uploadCache, storage: storage, db: db, userRepo: userRepo}
 }
 
 // isDuplicateKeyError 判断是否为重复键错误
@@ -148,6 +126,33 @@ func isDuplicateKeyError(err error) bool {
 	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "duplicate entry") || strings.Contains(message, "unique constraint")
+}
+
+// validateHashType 验证哈希类型
+func validateHashType(hashType string) error {
+	if hashType != hashTypeChunkAgg5M {
+		return ErrUnsupportedHashType
+	}
+	return nil
+}
+
+// collectPartHashes 收集分块哈希
+func collectPartHashes(parts []repository.UploadPartState, chunkCount int) ([]hash.ChunkHash, error) {
+	if len(parts) != chunkCount {
+		return nil, ErrChunkUploadIncomplete
+	}
+	chunkHashes := make([]hash.ChunkHash, 0, len(parts))
+	for index, part := range parts {
+		expected := index + 1
+		if part.PartNumber != expected || part.Value == "" {
+			return nil, ErrChunkUploadIncomplete
+		}
+		chunkHashes = append(chunkHashes, hash.ChunkHash{
+			PartNumber: part.PartNumber,
+			Hash:       part.Value,
+		})
+	}
+	return chunkHashes, nil
 }
 
 // checkParentFolder 检查父文件夹是否合法
@@ -236,8 +241,11 @@ func (s *FileService) createInstantUploadRecord(ctx context.Context, tx *gorm.DB
 
 // InitChunkUpload 初始化分块上传
 func (s *FileService) InitChunkUpload(ctx context.Context, userID uint, req ChunkUploadInitReq) (ChunkUploadInitResp, error) {
-	if req.FileHash == "" || req.FileName == "" || req.FileSize <= 0 || req.ChunkSize <= 0 || req.ChunkCount <= 0 {
-		return ChunkUploadInitResp{}, nil
+	if err := validateHashType(req.HashType); err != nil {
+		return ChunkUploadInitResp{}, err
+	}
+	if req.FileHash == "" || req.FileName == "" || req.FileSize <= 0 || req.ChunkSize != hash.ChunkIdentitySize || req.ChunkCount <= 0 {
+		return ChunkUploadInitResp{}, ErrUploadRequestInvalid
 	}
 	if err := s.checkParentFolder(ctx, userID, req.ParentID); err != nil {
 		return ChunkUploadInitResp{}, errors.WithMessage(err, "父文件夹不合法")
@@ -250,98 +258,118 @@ func (s *FileService) InitChunkUpload(ctx context.Context, userID uint, req Chun
 		return ChunkUploadInitResp{}, ErrUserSpaceNotEnough
 	}
 
-	session, err := s.fileRepo.GetPendingUploadSession(ctx, userID, req.ParentID, req.FileHash)
+	//查询是否已存在上传会话
+	session, err := s.fileRepo.GetPendingUploadSession(ctx, userID, req.ParentID, req.HashType, req.FileHash)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return ChunkUploadInitResp{}, errors.WithMessage(err, "查询上传会话失败")
 	}
+	//已存在未完成的上传会话
 	if err == nil {
+		//该上传会话可用
 		if session.FileSize == req.FileSize && session.ChunkSize == req.ChunkSize && session.ChunkCount == req.ChunkCount && session.ObjectName != "" && session.StorageUploadID != "" {
-			parts, listErr := s.storage.ListObjectParts(ctx, session.ObjectName, session.StorageUploadID)
-			if listErr != nil {
-				return ChunkUploadInitResp{}, errors.WithMessage(listErr, "查询已上传分块失败")
+			uploadedParts, cacheErr := s.uploadCache.ListUploadedParts(ctx, session.ID)
+			if cacheErr != nil {
+				return ChunkUploadInitResp{}, errors.WithMessage(cacheErr, "查询已上传分块失败")
 			}
-			uploadedChunks := uploadedChunksFromParts(parts)
-			session.UploadedChunks, err = encodeUploadedChunks(uploadedChunks)
-			if err != nil {
-				return ChunkUploadInitResp{}, errors.WithMessage(err, "编码已上传分块失败")
-			}
-			if saveErr := s.fileRepo.SaveUploadSession(ctx, session); saveErr != nil {
-				return ChunkUploadInitResp{}, errors.WithMessage(saveErr, "同步上传会话失败")
-			}
+			//返回已上传分块
 			return ChunkUploadInitResp{
 				UploadID:       session.ID,
-				UploadedChunks: uploadedChunks,
+				UploadedChunks: uploadedParts,
 			}, nil
 		}
 	}
 
+	//不存在可用的上传会话
+
+	//生成oss对象名
 	objectName := fmt.Sprintf("multipart/%s%s", uuid.NewString(), path.Ext(req.FileName))
 	uploadID, err := s.storage.NewMultipartUpload(ctx, objectName)
 	if err != nil {
 		return ChunkUploadInitResp{}, errors.WithMessage(err, "初始化对象分块上传失败")
 	}
-
+	//创建新的上传会话
 	newSession := &model.UploadSession{
 		UserID:          userID,
 		ParentID:        req.ParentID,
+		HashType:        req.HashType,
 		FileHash:        req.FileHash,
 		FileName:        req.FileName,
 		FileSize:        req.FileSize,
 		ChunkSize:       req.ChunkSize,
 		ChunkCount:      req.ChunkCount,
+		HeadHash:        req.HeadHash,
+		MidHash:         req.MidHash,
+		TailHash:        req.TailHash,
 		ObjectName:      objectName,
 		StorageUploadID: uploadID,
-		UploadedChunks:  "[]",
 		Status:          uploadSessionStatusPending,
 	}
+	//创建上传会话记录
 	if err := s.fileRepo.CreateUploadSession(ctx, newSession); err != nil {
+		//出错时清理上传会话
 		_ = s.storage.AbortMultipartUpload(ctx, objectName, uploadID)
 		return ChunkUploadInitResp{}, errors.WithMessage(err, "创建上传会话失败")
 	}
+
 	return ChunkUploadInitResp{
 		UploadID:       newSession.ID,
 		UploadedChunks: []int{},
 	}, nil
 }
 
-// UploadChunk 上传分块
-func (s *FileService) UploadChunk(ctx context.Context, userID uint, sessionID uint, chunkIndex int, chunk *multipart.FileHeader) error {
-	if chunk == nil || chunkIndex < 0 {
-		return ErrUploadSessionInvalid
+// SignPartUpload 为分块上传签名
+func (s *FileService) SignPartUpload(ctx context.Context, userID uint, req SignPartReq) (SignedPartResp, error) {
+	if req.UploadID == 0 || req.PartNumber <= 0 || req.ChunkHash == "" || req.ChecksumSHA256Base64 == "" {
+		return SignedPartResp{}, ErrUploadRequestInvalid
 	}
-	session, err := s.fileRepo.GetUploadSessionByID(ctx, sessionID, userID)
+	//查询上传会话
+	session, err := s.fileRepo.GetUploadSessionByID(ctx, req.UploadID, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SignedPartResp{}, ErrUploadSessionInvalid
+		}
+		return SignedPartResp{}, errors.WithMessage(err, "查询上传会话失败")
+	}
+	//会话失效或分块序号不合法
+	if session.Status != uploadSessionStatusPending || req.PartNumber > session.ChunkCount {
+		return SignedPartResp{}, ErrUploadSessionInvalid
+	}
+	//保存分块哈希
+	if err := s.uploadCache.SetPartHash(ctx, session.ID, req.PartNumber, req.ChunkHash, uploadStateExpire); err != nil {
+		return SignedPartResp{}, errors.WithMessage(err, "保存分块哈希失败")
+	}
+	//生成上传URL
+	uploadURL, headers, err := s.storage.PresignUploadPart(ctx, session.ObjectName, session.StorageUploadID, req.PartNumber, req.ChecksumSHA256Base64, partUploadURLExpire)
+	if err != nil {
+		return SignedPartResp{}, errors.WithMessage(err, "生成分块上传地址失败")
+	}
+	return SignedPartResp{
+		PartNumber: req.PartNumber,
+		UploadURL:  uploadURL,
+		Headers:    headers,
+	}, nil
+}
+
+// ReportUploadedPart 回报已上传分块
+func (s *FileService) ReportUploadedPart(ctx context.Context, userID uint, req ReportUploadedPartReq) error {
+	if req.UploadID == 0 || req.PartNumber <= 0 || strings.TrimSpace(req.ETag) == "" {
+		return ErrUploadRequestInvalid
+	}
+	//查询上传会话
+	session, err := s.fileRepo.GetUploadSessionByID(ctx, req.UploadID, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrUploadSessionInvalid
 		}
 		return errors.WithMessage(err, "查询上传会话失败")
 	}
-	if session.Status != uploadSessionStatusPending || chunkIndex >= session.ChunkCount {
+	//会话失效或分块序号不合法
+	if session.Status != uploadSessionStatusPending || req.PartNumber > session.ChunkCount {
 		return ErrUploadSessionInvalid
 	}
-
-	src, err := chunk.Open()
-	if err != nil {
-		return errors.WithMessage(err, "打开分块失败")
-	}
-	defer src.Close()
-
-	partNumber := chunkIndex + 1
-	if _, err := s.storage.UploadObjectPart(ctx, session.ObjectName, session.StorageUploadID, partNumber, src, chunk.Size); err != nil {
-		return errors.WithMessage(err, "上传对象分块失败")
-	}
-
-	uploadedChunks, err := parseUploadedChunks(session.UploadedChunks)
-	if err != nil {
-		return errors.WithMessage(err, "解析已上传分块失败")
-	}
-	uploadedChunks = addUploadedChunk(uploadedChunks, chunkIndex)
-	session.UploadedChunks, err = encodeUploadedChunks(uploadedChunks)
-	if err != nil {
-		return errors.WithMessage(err, "更新已上传分块失败")
-	}
-	if err := s.fileRepo.SaveUploadSession(ctx, session); err != nil {
-		return errors.WithMessage(err, "保存上传会话失败")
+	//保存分块ETag
+	if err := s.uploadCache.SetPartETag(ctx, session.ID, req.PartNumber, req.ETag, uploadStateExpire); err != nil {
+		return errors.WithMessage(err, "保存分块ETag失败")
 	}
 	return nil
 }
@@ -359,18 +387,8 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 		return 0, ErrUploadSessionInvalid
 	}
 
-	parts, err := s.storage.ListObjectParts(ctx, session.ObjectName, session.StorageUploadID)
-	if err != nil {
-		return 0, errors.WithMessage(err, "查询对象分块失败")
-	}
-	uploadedChunks := uploadedChunksFromParts(parts)
-	if len(uploadedChunks) != session.ChunkCount {
-		return 0, ErrChunkUploadIncomplete
-	}
-	for index := 0; index < session.ChunkCount; index++ {
-		if !slices.Contains(uploadedChunks, index) {
-			return 0, ErrChunkUploadIncomplete
-		}
+	if err := validateHashType(session.HashType); err != nil {
+		return 0, err
 	}
 
 	if err := s.checkParentFolder(ctx, userID, session.ParentID); err != nil {
@@ -384,46 +402,50 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 		return 0, ErrUserSpaceNotEnough
 	}
 
-	completeParts := make([]minio.CompletePart, 0, len(parts))
-	for _, part := range parts {
-		completeParts = append(completeParts, minio.CompletePart{
+	partHashes, err := s.uploadCache.ListPartHashes(ctx, session.ID)
+	if err != nil {
+		return 0, errors.WithMessage(err, "读取分块哈希失败")
+	}
+	chunkHashes, err := collectPartHashes(partHashes, session.ChunkCount)
+	if err != nil {
+		return 0, err
+	}
+	aggregateHash, err := hash.AggregateChunkHash(chunkHashes, session.FileSize)
+	if err != nil {
+		return 0, errors.WithMessage(err, "计算聚合哈希失败")
+	}
+	if aggregateHash != session.FileHash {
+		return 0, ErrChunkFileHashMismatch
+	}
+
+	partEtags, err := s.uploadCache.ListPartETags(ctx, session.ID)
+	if err != nil {
+		return 0, errors.WithMessage(err, "读取分块ETag失败")
+	}
+	if len(partEtags) != session.ChunkCount {
+		return 0, ErrChunkUploadIncomplete
+	}
+	completeParts := make([]oss.CompletePart, 0, len(partEtags))
+	for index, part := range partEtags {
+		expected := index + 1
+		if part.PartNumber != expected || part.Value == "" {
+			return 0, ErrChunkUploadIncomplete
+		}
+		completeParts = append(completeParts, oss.CompletePart{
 			PartNumber: part.PartNumber,
-			ETag:       part.ETag,
+			ETag:       part.Value,
 		})
 	}
 	if err := s.storage.CompleteMultipartUpload(ctx, session.ObjectName, session.StorageUploadID, completeParts); err != nil {
 		return 0, errors.WithMessage(err, "完成对象分块上传失败")
 	}
 
-	object, err := s.storage.GetObject(ctx, session.ObjectName)
-	if err != nil {
-		_ = s.storage.DeleteFile(ctx, session.ObjectName)
-		_ = s.fileRepo.DeleteUploadSession(ctx, session.ID)
-		return 0, errors.WithMessage(err, "打开合并对象失败")
-	}
-	defer object.Close()
-	objectInfo, err := object.Stat()
-	if err != nil {
-		_ = s.storage.DeleteFile(ctx, session.ObjectName)
-		_ = s.fileRepo.DeleteUploadSession(ctx, session.ID)
-		return 0, errors.WithMessage(err, "读取对象信息失败")
-	}
-	fileHashes, err := hash.HashReaderWithSamples(object, object, objectInfo.Size)
-	if err != nil {
-		_ = s.storage.DeleteFile(ctx, session.ObjectName)
-		_ = s.fileRepo.DeleteUploadSession(ctx, session.ID)
-		return 0, errors.WithMessage(err, "计算合并文件哈希失败")
-	}
-	if fileHashes.Full != session.FileHash {
-		_ = s.storage.DeleteFile(ctx, session.ObjectName)
-		_ = s.fileRepo.DeleteUploadSession(ctx, session.ID)
-		return 0, ErrChunkFileHashMismatch
-	}
 	shouldCleanMinio := true
 	defer func() {
 		if shouldCleanMinio {
 			_ = s.storage.DeleteFile(ctx, session.ObjectName)
 		}
+		_ = s.uploadCache.DeleteUploadState(ctx, session.ID)
 	}()
 
 	var uploadedID uint
@@ -439,7 +461,7 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 			return ErrUploadSessionInvalid
 		}
 
-		fileStore, findErr := s.fileRepo.GetFileByHashForUpdate(ctx, session.FileHash, tx)
+		fileStore, findErr := s.fileRepo.GetFileByIdentityForUpdate(ctx, session.HashType, session.FileHash, tx)
 		switch {
 		case findErr == nil:
 			uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, session.ParentID, session.FileName, fileStore.FileSize, fileStore)
@@ -448,19 +470,20 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 			}
 		case errors.Is(findErr, gorm.ErrRecordNotFound):
 			newFileStore := &model.FileStore{
+				HashType: session.HashType,
 				FileHash: session.FileHash,
 				FileName: session.FileName,
 				FileSize: session.FileSize,
 				FileAddr: session.ObjectName,
-				HeadHash: fileHashes.Head,
-				MidHash:  fileHashes.Mid,
-				TailHash: fileHashes.Tail,
+				HeadHash: session.HeadHash,
+				MidHash:  session.MidHash,
+				TailHash: session.TailHash,
 			}
 			if createErr := s.fileRepo.CreateFileStore(ctx, newFileStore, tx); createErr != nil {
 				if !isDuplicateKeyError(createErr) {
 					return errors.WithMessage(createErr, "文件元数据存储失败")
 				}
-				fileStore, createErr = s.fileRepo.GetFileByHashForUpdate(ctx, session.FileHash, tx)
+				fileStore, createErr = s.fileRepo.GetFileByIdentityForUpdate(ctx, session.HashType, session.FileHash, tx)
 				if createErr != nil {
 					return errors.WithMessage(createErr, "查询并发写入的文件失败")
 				}
@@ -502,7 +525,7 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	}
 
 	shouldCleanMinio = false
-	logger.S.Infof("分块上传完成, uploadID: %d, fileHash: %s, userID: %d", sessionID, session.FileHash, userID)
+	logger.S.Infof("直传分块上传完成, uploadID: %d, hashType: %s, fileHash: %s, userID: %d", sessionID, session.HashType, session.FileHash, userID)
 	return uploadedID, nil
 }
 
@@ -526,14 +549,17 @@ func (s *FileService) QuickCheck(ctx context.Context, userID uint, req QuickChec
 }
 
 // InstantUpload 命中秒传后的确认落库
-func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID uint, fileName string, fileHash string, fileSize int64) (uint, error) {
+func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID uint, hashType string, fileName string, fileHash string, fileSize int64) (uint, error) {
+	if err := validateHashType(hashType); err != nil {
+		return 0, err
+	}
 	if err := s.checkParentFolder(ctx, userID, parentID); err != nil {
 		return 0, errors.WithMessage(err, "父文件夹不合法")
 	}
 	var uploadedID uint
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		//校验哈希
-		fileStore, err := s.fileRepo.GetFileByHashForUpdate(ctx, fileHash, tx)
+		fileStore, err := s.fileRepo.GetFileByIdentityForUpdate(ctx, hashType, fileHash, tx)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrInstantUploadUnavailable
@@ -558,7 +584,7 @@ func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID u
 		return 0, errors.WithMessage(err, "秒传失败")
 	}
 
-	logger.S.Infof("前端秒传确认成功, fileHash: %s, userID: %d, parentID: %d", fileHash, userID, parentID)
+	logger.S.Infof("前端秒传确认成功, hashType: %s, fileHash: %s, userID: %d, parentID: %d", hashType, fileHash, userID, parentID)
 	return uploadedID, nil
 }
 
@@ -577,19 +603,26 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	if user.UsedSpace+fileHeader.Size > user.TotalSpace {
 		return 0, ErrUserSpaceNotEnough
 	}
-	// 计算文件hash
+	// 计算身份哈希与抽样哈希
 	fileHashes, err := hash.HashFileWithSamples(fileHeader)
 	if err != nil {
 		return 0, errors.WithMessage(err, "文件hash计算失败")
 	}
-	fileHash := fileHashes.Full
-	// 查询文件哈希
-	_, err = s.fileRepo.GetFileByHash(ctx, fileHash)
+	chunkHashes, err := hash.ChunkHashesFromFileHeader(fileHeader, hash.ChunkIdentitySize)
+	if err != nil {
+		return 0, errors.WithMessage(err, "分块哈希计算失败")
+	}
+	fileHash, err := hash.AggregateChunkHash(chunkHashes, fileHeader.Size)
+	if err != nil {
+		return 0, errors.WithMessage(err, "聚合哈希计算失败")
+	}
+	// 查询文件身份
+	_, err = s.fileRepo.GetFileByIdentity(ctx, hashTypeChunkAgg5M, fileHash)
 	// 去重上传成功
 	if err == nil {
 		var uploadedID uint
 		err = s.db.Transaction(func(tx *gorm.DB) error {
-			lockedStore, lockErr := s.fileRepo.GetFileByHashForUpdate(ctx, fileHash, tx)
+			lockedStore, lockErr := s.fileRepo.GetFileByIdentityForUpdate(ctx, hashTypeChunkAgg5M, fileHash, tx)
 			if lockErr != nil {
 				if errors.Is(lockErr, gorm.ErrRecordNotFound) {
 					return ErrInstantUploadUnavailable
@@ -635,6 +668,7 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		// 插入文件元数据
 		newFileStore := &model.FileStore{
+			HashType: hashTypeChunkAgg5M,
 			FileHash: fileHash,
 			FileName: fileHeader.Filename,
 			FileSize: fileHeader.Size,

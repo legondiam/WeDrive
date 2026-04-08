@@ -23,6 +23,7 @@ func BuildApp(db *gorm.DB, redis *redis.Client, minio *minio.Client) *gin.Engine
 		repository.NewUserRepo,
 		repository.NewUserCacheRepo,
 		repository.NewFileRepo,
+		repository.NewUploadCacheRepo,
 		repository.NewShareRepo,
 		oss.NewStorage,
 		service.NewUserService,

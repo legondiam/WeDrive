@@ -382,13 +382,14 @@ import DropdownMenuRadioItem from '@/components/ui/dropdown-menu/DropdownMenuRad
 import ShareExtractIcon from '@/components/icons/ShareExtractIcon.vue'
 import { useFileStore } from '../stores/file'
 import { useUserStore } from '../stores/user'
-import { uploadFile, quickCheck, instantUpload, initChunkUpload, uploadChunk, completeChunkUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
+import { uploadFile, quickCheck, instantUpload, initChunkUpload, signPartUpload, reportUploadedPart, uploadChunkDirect, completeChunkUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
 import { createShare, downloadShare } from '../api/share'
-import { calculateFileSHA256, calculateFileSampleSHA256 } from '../lib/sha256'
+import { calculateFileSampleSHA256, calculateChunkIdentity, CHUNK_IDENTITY_SIZE } from '../lib/sha256'
 
 const CODE_INSTANT_UNAVAILABLE = 3003
 const CHUNK_UPLOAD_THRESHOLD = 16 * 1024 * 1024
-const CHUNK_SIZE = 5 * 1024 * 1024
+const HASH_TYPE = 'chunk_agg_5m_sha256_v1'
+const CHUNK_SIZE = CHUNK_IDENTITY_SIZE
 
 const FilePond = vueFilePond()
 const fileStore = useFileStore()
@@ -450,6 +451,7 @@ const filePondServer = {
   process: (fieldName, file, metadata, load, error, progress, abort) => {
     const controller = new AbortController()
     let finalized = false
+    let chunkIdentity = null
     const finishUpload = (uploadedId, message, options = {}) => {
       if (finalized) return
 
@@ -472,19 +474,25 @@ const filePondServer = {
     calculateFileSampleSHA256(file)
       .then(async (sampleHashes) => {
         if (finalized) return
-        let fullFileHash = ''
-
         const quickCheckRes = await quickCheck(sampleHashes)
         if (finalized) return
 
+        const ensureChunkIdentity = async () => {
+          if (!chunkIdentity) {
+            chunkIdentity = await calculateChunkIdentity(file, CHUNK_SIZE)
+          }
+          return chunkIdentity
+        }
+
         if (quickCheckRes?.data === true) {
-          fullFileHash = await calculateFileSHA256(file)
+          const identity = await ensureChunkIdentity()
           if (finalized) return
 
           let instantRes = null
           try {
             instantRes = await instantUpload({
-              file_hash: fullFileHash,
+              hash_type: HASH_TYPE,
+              file_hash: identity.file_hash,
               file_name: file.name,
               file_size: file.size,
               parent_id: fileStore.currentParentId,
@@ -502,18 +510,20 @@ const filePondServer = {
         }
 
         if (shouldUseChunkUpload(file)) {
-          if (!fullFileHash) {
-            fullFileHash = await calculateFileSHA256(file)
-            if (finalized) return
-          }
-          const chunkCount = Math.ceil(file.size / CHUNK_SIZE)
+          const identity = await ensureChunkIdentity()
+          if (finalized) return
+
           const initRes = await initChunkUpload({
-            file_hash: fullFileHash,
+            hash_type: HASH_TYPE,
+            file_hash: identity.file_hash,
             file_name: file.name,
             file_size: file.size,
             parent_id: fileStore.currentParentId,
-            chunk_size: CHUNK_SIZE,
-            chunk_count: chunkCount,
+            chunk_size: identity.chunk_size,
+            chunk_count: identity.chunk_count,
+            head_hash: sampleHashes.head_hash,
+            mid_hash: sampleHashes.mid_hash,
+            tail_hash: sampleHashes.tail_hash,
           })
           if (finalized) return
 
@@ -523,29 +533,51 @@ const filePondServer = {
           }
           const uploadedChunks = new Set(initRes?.data?.uploaded_chunks || [])
           const uploadChunksWithResume = async () => {
-            for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-              if (uploadedChunks.has(chunkIndex)) {
-                const end = Math.min(file.size, (chunkIndex + 1) * CHUNK_SIZE)
+            for (const part of identity.parts) {
+              const chunkIndex = part.part_number - 1
+              const start = chunkIndex * CHUNK_SIZE
+              const end = Math.min(file.size, start + CHUNK_SIZE)
+
+              if (uploadedChunks.has(part.part_number)) {
                 progress(true, end, file.size || 1)
                 continue
               }
-              const start = chunkIndex * CHUNK_SIZE
-              const end = Math.min(file.size, start + CHUNK_SIZE)
-              const chunkBlob = file.slice(start, end)
 
-              await uploadChunk({
+              const signRes = await signPartUpload({
                 upload_id: uploadId,
-                chunk_index: chunkIndex,
-                chunk: chunkBlob,
-              }, (event) => {
-                if (finalized) return
-                const currentLoaded = event.loaded || 0
-                const uploadedBefore = start
-                const total = file.size || 1
-                progress(true, Math.min(uploadedBefore + currentLoaded, total), total)
-              }, controller.signal)
-
+                part_number: part.part_number,
+                chunk_hash: part.chunk_hash,
+                checksum_sha256_base64: part.checksum_sha256_base64,
+              })
               if (finalized) return null
+
+              const directRes = await uploadChunkDirect(
+                signRes?.data?.upload_url,
+                part.chunk,
+                signRes?.data?.headers || {},
+                (event) => {
+                  if (finalized) return
+                  const currentLoaded = event.loaded || 0
+                  const uploadedBefore = start
+                  const total = file.size || 1
+                  progress(true, Math.min(uploadedBefore + currentLoaded, total), total)
+                },
+                controller.signal
+              )
+              if (finalized) return null
+
+              const etag = directRes?.headers?.etag || directRes?.headers?.ETag
+              if (!etag) {
+                throw new Error('分块上传成功但未返回ETag，请检查 MinIO CORS 配置')
+              }
+
+              await reportUploadedPart({
+                upload_id: uploadId,
+                part_number: part.part_number,
+                etag,
+              })
+              if (finalized) return null
+
               progress(true, end, file.size || 1)
             }
 

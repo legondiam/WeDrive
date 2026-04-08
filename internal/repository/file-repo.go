@@ -40,10 +40,10 @@ func (r *FileRepo) SaveUploadSession(ctx context.Context, session *model.UploadS
 }
 
 // GetPendingUploadSession 获取待完成的分块上传会话
-func (r *FileRepo) GetPendingUploadSession(ctx context.Context, userID uint, parentID uint, fileHash string) (*model.UploadSession, error) {
+func (r *FileRepo) GetPendingUploadSession(ctx context.Context, userID uint, parentID uint, hashType string, fileHash string) (*model.UploadSession, error) {
 	var session model.UploadSession
 	err := r.db.WithContext(ctx).
-		Where("user_id = ? AND parent_id = ? AND file_hash = ? AND status = ?", userID, parentID, fileHash, "pending").
+		Where("user_id = ? AND parent_id = ? AND hash_type = ? AND file_hash = ? AND status = ?", userID, parentID, hashType, fileHash, "pending").
 		Order("id DESC").
 		First(&session).Error
 	return &session, errors.WithStack(err)
@@ -99,10 +99,10 @@ func (r *FileRepo) CreateUserFile(ctx context.Context, userFile *model.UserFile,
 	return db.WithContext(ctx).Create(userFile).Error
 }
 
-// GetFileByHash 根据文件hash获取文件
-func (r *FileRepo) GetFileByHash(ctx context.Context, hash string) (*model.FileStore, error) {
+// GetFileByIdentity 根据身份标识获取文件
+func (r *FileRepo) GetFileByIdentity(ctx context.Context, hashType string, hash string) (*model.FileStore, error) {
 	var fileStore model.FileStore
-	err := r.db.WithContext(ctx).Where("file_hash = ?", hash).First(&fileStore).Error
+	err := r.db.WithContext(ctx).Where("hash_type = ? AND file_hash = ?", hashType, hash).First(&fileStore).Error
 	return &fileStore, errors.WithStack(err)
 }
 
@@ -119,12 +119,12 @@ func (r *FileRepo) GetFileBySample(ctx context.Context, fileSize int64, headHash
 	return count > 0, nil
 }
 
-// GetFileByHashForUpdate 根据文件hash获取文件并加锁
-func (r *FileRepo) GetFileByHashForUpdate(ctx context.Context, hash string, tx *gorm.DB) (*model.FileStore, error) {
+// GetFileByIdentityForUpdate 根据身份标识获取文件并加锁
+func (r *FileRepo) GetFileByIdentityForUpdate(ctx context.Context, hashType string, hash string, tx *gorm.DB) (*model.FileStore, error) {
 	var fileStore model.FileStore
 	err := tx.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("file_hash = ?", hash).
+		Where("hash_type = ? AND file_hash = ?", hashType, hash).
 		First(&fileStore).Error
 	return &fileStore, errors.WithStack(err)
 }

@@ -19,6 +19,7 @@ func NewFileHandler(fileService *service.FileService) *FileHandler {
 }
 
 type instantUploadReq struct {
+	HashType string `json:"hash_type" binding:"required"`
 	FileHash string `json:"file_hash" binding:"required"`
 	FileName string `json:"file_name" binding:"required"`
 	FileSize int64  `json:"file_size"`
@@ -33,12 +34,29 @@ type quickCheckReq struct {
 }
 
 type initChunkUploadReq struct {
+	HashType   string `json:"hash_type" binding:"required"`
 	FileHash   string `json:"file_hash" binding:"required"`
 	FileName   string `json:"file_name" binding:"required"`
 	FileSize   int64  `json:"file_size" binding:"required"`
 	ParentID   uint   `json:"parent_id"`
 	ChunkSize  int64  `json:"chunk_size" binding:"required"`
 	ChunkCount int    `json:"chunk_count" binding:"required"`
+	HeadHash   string `json:"head_hash" binding:"required"`
+	MidHash    string `json:"mid_hash" binding:"required"`
+	TailHash   string `json:"tail_hash" binding:"required"`
+}
+
+type signPartReq struct {
+	UploadID             uint   `json:"upload_id" binding:"required"`
+	PartNumber           int    `json:"part_number" binding:"required"`
+	ChunkHash            string `json:"chunk_hash" binding:"required"`
+	ChecksumSHA256Base64 string `json:"checksum_sha256_base64" binding:"required"`
+}
+
+type reportUploadedPartReq struct {
+	UploadID   uint   `json:"upload_id" binding:"required"`
+	PartNumber int    `json:"part_number" binding:"required"`
+	ETag       string `json:"etag" binding:"required"`
 }
 
 // Upload 上传文件
@@ -117,10 +135,14 @@ func (h *FileHandler) InstantUpload(c *gin.Context) {
 		return
 	}
 	userID, _ := c.Get("userID")
-	uploadedID, err := h.fileService.InstantUpload(c.Request.Context(), userID.(uint), req.ParentID, req.FileName, req.FileHash, req.FileSize)
+	uploadedID, err := h.fileService.InstantUpload(c.Request.Context(), userID.(uint), req.ParentID, req.HashType, req.FileName, req.FileHash, req.FileSize)
 	if err != nil {
 		if errors.Is(err, service.ErrParentFolderInvalid) {
 			response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
+			return
+		}
+		if errors.Is(err, service.ErrUnsupportedHashType) {
+			response.BusinessError(c, response.CodeInvalidParam, "hash_type不支持")
 			return
 		}
 		if errors.Is(err, service.ErrUserSpaceNotEnough) {
@@ -147,16 +169,28 @@ func (h *FileHandler) InitChunkUpload(c *gin.Context) {
 	}
 	userID, _ := c.Get("userID")
 	resp, err := h.fileService.InitChunkUpload(c.Request.Context(), userID.(uint), service.ChunkUploadInitReq{
+		HashType:   req.HashType,
 		FileHash:   req.FileHash,
 		FileName:   req.FileName,
 		FileSize:   req.FileSize,
 		ParentID:   req.ParentID,
 		ChunkSize:  req.ChunkSize,
 		ChunkCount: req.ChunkCount,
+		HeadHash:   req.HeadHash,
+		MidHash:    req.MidHash,
+		TailHash:   req.TailHash,
 	})
 	if err != nil {
+		if errors.Is(err, service.ErrUploadRequestInvalid) {
+			response.BusinessError(c, response.CodeInvalidParam, "上传请求无效")
+			return
+		}
 		if errors.Is(err, service.ErrParentFolderInvalid) {
 			response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
+			return
+		}
+		if errors.Is(err, service.ErrUnsupportedHashType) {
+			response.BusinessError(c, response.CodeInvalidParam, "hash_type不支持")
 			return
 		}
 		if errors.Is(err, service.ErrUserSpaceNotEnough) {
@@ -170,33 +204,59 @@ func (h *FileHandler) InitChunkUpload(c *gin.Context) {
 	response.Success(c, resp)
 }
 
-// UploadChunk 上传分块
-func (h *FileHandler) UploadChunk(c *gin.Context) {
-	chunk, err := c.FormFile("chunk")
-	if err != nil {
-		response.BusinessError(c, response.CodeMissingFile, "请上传分块文件")
-		return
-	}
-	uploadIDRaw := c.PostForm("upload_id")
-	chunkIndexRaw := c.PostForm("chunk_index")
-	uploadID, err := strconv.ParseUint(uploadIDRaw, 10, 64)
-	if err != nil {
-		response.BusinessError(c, response.CodeInvalidParam, "upload_id无效")
-		return
-	}
-	chunkIndex, err := strconv.Atoi(chunkIndexRaw)
-	if err != nil {
-		response.BusinessError(c, response.CodeInvalidParam, "chunk_index无效")
+// SignPartUpload 为分块上传签名
+func (h *FileHandler) SignPartUpload(c *gin.Context) {
+	var req signPartReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
 		return
 	}
 	userID, _ := c.Get("userID")
-	if err := h.fileService.UploadChunk(c.Request.Context(), userID.(uint), uint(uploadID), chunkIndex, chunk); err != nil {
+	resp, err := h.fileService.SignPartUpload(c.Request.Context(), userID.(uint), service.SignPartReq{
+		UploadID:             req.UploadID,
+		PartNumber:           req.PartNumber,
+		ChunkHash:            req.ChunkHash,
+		ChecksumSHA256Base64: req.ChecksumSHA256Base64,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrUploadRequestInvalid) {
+			response.BusinessError(c, response.CodeInvalidParam, "上传请求无效")
+			return
+		}
 		if errors.Is(err, service.ErrUploadSessionInvalid) {
 			response.BusinessError(c, response.CodeUploadSessionInvalid, "上传会话无效")
 			return
 		}
-		response.ServerError(c, "分块上传失败")
-		logger.S.Errorf("分块上传失败：%v", err)
+		response.ServerError(c, "生成分块上传地址失败")
+		logger.S.Errorf("生成分块上传地址失败：%v", err)
+		return
+	}
+	response.Success(c, resp)
+}
+
+// ReportUploadedPart 回报已上传分块
+func (h *FileHandler) ReportUploadedPart(c *gin.Context) {
+	var req reportUploadedPartReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
+		return
+	}
+	userID, _ := c.Get("userID")
+	if err := h.fileService.ReportUploadedPart(c.Request.Context(), userID.(uint), service.ReportUploadedPartReq{
+		UploadID:   req.UploadID,
+		PartNumber: req.PartNumber,
+		ETag:       req.ETag,
+	}); err != nil {
+		if errors.Is(err, service.ErrUploadRequestInvalid) {
+			response.BusinessError(c, response.CodeInvalidParam, "上传请求无效")
+			return
+		}
+		if errors.Is(err, service.ErrUploadSessionInvalid) {
+			response.BusinessError(c, response.CodeUploadSessionInvalid, "上传会话无效")
+			return
+		}
+		response.ServerError(c, "保存分块上传状态失败")
+		logger.S.Errorf("保存分块上传状态失败：%v", err)
 		return
 	}
 	response.Success(c, nil)
