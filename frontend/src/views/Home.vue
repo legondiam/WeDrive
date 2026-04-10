@@ -384,11 +384,11 @@ import { useFileStore } from '../stores/file'
 import { useUserStore } from '../stores/user'
 import { uploadFile, quickCheck, instantUpload, initChunkUpload, signPartUpload, reportUploadedPart, uploadChunkDirect, completeChunkUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
 import { createShare, downloadShare } from '../api/share'
-import { calculateFileSampleSHA256, calculateChunkIdentity, CHUNK_IDENTITY_SIZE } from '../lib/sha256'
+import { calculateFileSHA256, calculateFileSampleSHA256, calculateChunkIdentity, CHUNK_IDENTITY_SIZE } from '../lib/sha256'
 
 const CODE_INSTANT_UNAVAILABLE = 3003
 const CHUNK_UPLOAD_THRESHOLD = 16 * 1024 * 1024
-const HASH_TYPE = 'chunk_agg_5m_sha256_v1'
+const HASH_TYPE = 'full_sha256_v1'
 const CHUNK_SIZE = CHUNK_IDENTITY_SIZE
 
 const FilePond = vueFilePond()
@@ -452,6 +452,7 @@ const filePondServer = {
     const controller = new AbortController()
     let finalized = false
     let chunkIdentity = null
+    let fullFileHash = null
     const finishUpload = (uploadedId, message, options = {}) => {
       if (finalized) return
 
@@ -484,15 +485,22 @@ const filePondServer = {
           return chunkIdentity
         }
 
+        const ensureFullFileHash = async () => {
+          if (!fullFileHash) {
+            fullFileHash = await calculateFileSHA256(file)
+          }
+          return fullFileHash
+        }
+
         if (quickCheckRes?.data === true) {
-          const identity = await ensureChunkIdentity()
+          const fileHash = await ensureFullFileHash()
           if (finalized) return
 
           let instantRes = null
           try {
             instantRes = await instantUpload({
               hash_type: HASH_TYPE,
-              file_hash: identity.file_hash,
+              file_hash: fileHash,
               file_name: file.name,
               file_size: file.size,
               parent_id: fileStore.currentParentId,
@@ -511,11 +519,12 @@ const filePondServer = {
 
         if (shouldUseChunkUpload(file)) {
           const identity = await ensureChunkIdentity()
+          const fileHash = await ensureFullFileHash()
           if (finalized) return
 
           const initRes = await initChunkUpload({
             hash_type: HASH_TYPE,
-            file_hash: identity.file_hash,
+            file_hash: fileHash,
             file_name: file.name,
             file_size: file.size,
             parent_id: fileStore.currentParentId,

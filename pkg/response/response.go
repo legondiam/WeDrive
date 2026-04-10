@@ -28,6 +28,7 @@ const (
 	CodeUploadSessionInvalid  = 3004 // 上传会话无效
 	CodeChunkUploadIncomplete = 3005 // 分块上传未完成
 	CodeChunkFileHashMismatch = 3006 // 分块文件校验失败
+	CodeUploadMethodInvalid   = 3007 // 上传方式不符合文件大小规则
 
 	// 分享模块
 	CodeShareNotFound   = 4001 // 分享不存在

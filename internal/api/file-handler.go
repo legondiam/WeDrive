@@ -88,6 +88,10 @@ func (h *FileHandler) Upload(c *gin.Context) {
 			response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
 			return
 		}
+		if errors.Is(err, service.ErrUploadMethodInvalid) {
+			response.BusinessError(c, response.CodeUploadMethodInvalid, "文件过大，请使用分块上传")
+			return
+		}
 		if errors.Is(err, service.ErrUserSpaceNotEnough) {
 			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
 			return
@@ -182,6 +186,10 @@ func (h *FileHandler) InitChunkUpload(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, service.ErrUploadRequestInvalid) {
 			response.BusinessError(c, response.CodeInvalidParam, "上传请求无效")
+			return
+		}
+		if errors.Is(err, service.ErrUploadMethodInvalid) {
+			response.BusinessError(c, response.CodeUploadMethodInvalid, "小文件请使用普通上传")
 			return
 		}
 		if errors.Is(err, service.ErrParentFolderInvalid) {

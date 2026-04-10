@@ -30,11 +30,13 @@ var ErrChunkUploadIncomplete = errors.New("分块上传未完成")
 var ErrChunkFileHashMismatch = errors.New("文件哈希不匹配")
 var ErrUnsupportedHashType = errors.New("不支持的哈希规则")
 var ErrUploadRequestInvalid = errors.New("上传请求无效")
+var ErrUploadMethodInvalid = errors.New("上传方式不符合文件大小规则")
 
 const (
 	uploadSessionStatusPending   = "pending"
 	uploadSessionStatusCompleted = "completed"
-	hashTypeChunkAgg5M           = "chunk_agg_5m_sha256_v1"
+	hashTypeFullSHA256           = "full_sha256_v1"
+	chunkUploadThreshold         = 16 << 20
 	uploadStateExpire            = 24 * time.Hour
 	partUploadURLExpire          = 15 * time.Minute
 )
@@ -131,7 +133,7 @@ func isDuplicateKeyError(err error) bool {
 
 // validateHashType 验证哈希类型
 func validateHashType(hashType string) error {
-	if hashType != hashTypeChunkAgg5M {
+	if hashType != hashTypeFullSHA256 {
 		return ErrUnsupportedHashType
 	}
 	return nil
@@ -256,6 +258,9 @@ func (s *FileService) InitChunkUpload(ctx context.Context, userID uint, req Chun
 	}
 	if req.FileHash == "" || req.FileName == "" || req.FileSize <= 0 || req.ChunkSize != hash.ChunkIdentitySize || req.ChunkCount <= 0 {
 		return ChunkUploadInitResp{}, ErrUploadRequestInvalid
+	}
+	if req.FileSize < chunkUploadThreshold {
+		return ChunkUploadInitResp{}, ErrUploadMethodInvalid
 	}
 	if err := s.checkParentFolder(ctx, userID, req.ParentID); err != nil {
 		return ChunkUploadInitResp{}, errors.WithMessage(err, "父文件夹不合法")
@@ -415,23 +420,6 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	}
 	if user.UsedSpace+session.FileSize > user.TotalSpace {
 		return 0, ErrUserSpaceNotEnough
-	}
-	//读取分块哈希
-	partHashes, err := s.uploadCache.ListPartHashes(ctx, session.ID)
-	if err != nil {
-		return 0, errors.WithMessage(err, "读取分块哈希失败")
-	}
-	//计算聚合哈希
-	chunkHashes, err := collectPartHashes(partHashes, session.ChunkCount)
-	if err != nil {
-		return 0, err
-	}
-	aggregateHash, err := hash.AggregateChunkHash(chunkHashes, session.FileSize)
-	if err != nil {
-		return 0, errors.WithMessage(err, "计算聚合哈希失败")
-	}
-	if aggregateHash != session.FileHash {
-		return 0, ErrChunkFileHashMismatch
 	}
 	//读取分块ETag
 	partEtags, err := s.uploadCache.ListPartETags(ctx, session.ID)
@@ -610,8 +598,11 @@ func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID u
 	return uploadedID, nil
 }
 
-// UploadFile 上传文件
+// UploadFile 普通上传文件
 func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.FileHeader, userID uint, parentID uint) (uint, error) {
+	if fileHeader.Size >= chunkUploadThreshold {
+		return 0, ErrUploadMethodInvalid
+	}
 	// 检查父文件夹
 	err := s.checkParentFolder(ctx, userID, parentID)
 	if err != nil {
@@ -630,21 +621,14 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	if err != nil {
 		return 0, errors.WithMessage(err, "文件hash计算失败")
 	}
-	chunkHashes, err := hash.ChunkHashesFromFileHeader(fileHeader, hash.ChunkIdentitySize)
-	if err != nil {
-		return 0, errors.WithMessage(err, "分块哈希计算失败")
-	}
-	fileHash, err := hash.AggregateChunkHash(chunkHashes, fileHeader.Size)
-	if err != nil {
-		return 0, errors.WithMessage(err, "聚合哈希计算失败")
-	}
+	fileHash := fileHashes.Full
 	// 查询文件身份
-	_, err = s.fileRepo.GetFileByIdentity(ctx, hashTypeChunkAgg5M, fileHash)
+	_, err = s.fileRepo.GetFileByIdentity(ctx, hashTypeFullSHA256, fileHash)
 	// 去重上传成功
 	if err == nil {
 		var uploadedID uint
 		err = s.db.Transaction(func(tx *gorm.DB) error {
-			lockedStore, lockErr := s.fileRepo.GetFileByIdentityForUpdate(ctx, hashTypeChunkAgg5M, fileHash, tx)
+			lockedStore, lockErr := s.fileRepo.GetFileByIdentityForUpdate(ctx, hashTypeFullSHA256, fileHash, tx)
 			if lockErr != nil {
 				if errors.Is(lockErr, gorm.ErrRecordNotFound) {
 					return ErrInstantUploadUnavailable
@@ -690,7 +674,7 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		// 插入文件元数据
 		newFileStore := &model.FileStore{
-			HashType: hashTypeChunkAgg5M,
+			HashType: hashTypeFullSHA256,
 			FileHash: fileHash,
 			FileName: fileHeader.Filename,
 			FileSize: fileHeader.Size,

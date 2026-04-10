@@ -4,14 +4,6 @@ function toHex(buffer) {
     .join('')
 }
 
-function encodeBigEndianInt64(value) {
-  const buffer = new ArrayBuffer(8)
-  const view = new DataView(buffer)
-  const bigValue = BigInt(value)
-  view.setBigUint64(0, bigValue, false)
-  return new Uint8Array(buffer)
-}
-
 const SAMPLE_CHUNK_SIZE = 1024 * 1024
 export const CHUNK_IDENTITY_SIZE = 5 * 1024 * 1024
 
@@ -62,7 +54,6 @@ export async function calculateFileSampleSHA256(file) {
 export async function calculateChunkIdentity(file, chunkSize = CHUNK_IDENTITY_SIZE) {
   const chunkCount = Math.ceil(file.size / chunkSize)
   const parts = []
-  const digestBytes = []
 
   for (let index = 0; index < chunkCount; index += 1) {
     const start = index * chunkSize
@@ -70,9 +61,7 @@ export async function calculateChunkIdentity(file, chunkSize = CHUNK_IDENTITY_SI
     const blob = file.slice(start, end)
     const buffer = await blob.arrayBuffer()
     const digest = await digestArrayBuffer(buffer)
-    const digestUint8 = new Uint8Array(digest)
 
-    digestBytes.push(digestUint8)
     parts.push({
       part_number: index + 1,
       chunk_hash: toHex(digest),
@@ -81,21 +70,9 @@ export async function calculateChunkIdentity(file, chunkSize = CHUNK_IDENTITY_SI
     })
   }
 
-  const totalDigestBytes = digestBytes.reduce((sum, item) => sum + item.length, 0)
-  const aggregateInput = new Uint8Array(totalDigestBytes + 8)
-  let offset = 0
-  for (const digest of digestBytes) {
-    aggregateInput.set(digest, offset)
-    offset += digest.length
-  }
-  aggregateInput.set(encodeBigEndianInt64(file.size), offset)
-
-  const aggregateDigest = await crypto.subtle.digest('SHA-256', aggregateInput)
-
   return {
     chunk_size: chunkSize,
     chunk_count: chunkCount,
-    file_hash: toHex(aggregateDigest),
     parts,
   }
 }
