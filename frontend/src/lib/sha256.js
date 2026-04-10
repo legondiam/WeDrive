@@ -4,17 +4,6 @@ function toHex(buffer) {
     .join('')
 }
 
-function toBase64(buffer) {
-  let binary = ''
-  const bytes = new Uint8Array(buffer)
-  const chunkSize = 0x8000
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    const slice = bytes.subarray(index, index + chunkSize)
-    binary += String.fromCharCode(...slice)
-  }
-  return btoa(binary)
-}
-
 function encodeBigEndianInt64(value) {
   const buffer = new ArrayBuffer(8)
   const view = new DataView(buffer)
@@ -87,7 +76,6 @@ export async function calculateChunkIdentity(file, chunkSize = CHUNK_IDENTITY_SI
     parts.push({
       part_number: index + 1,
       chunk_hash: toHex(digest),
-      checksum_sha256_base64: toBase64(digest),
       chunk: blob,
       size: end - start,
     })
