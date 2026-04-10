@@ -8,6 +8,8 @@ import (
 	"WeDrive/pkg/utils/convert"
 	"WeDrive/pkg/utils/hash"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"mime/multipart"
 	"path"
@@ -97,10 +99,9 @@ type ChunkUploadInitResp struct {
 }
 
 type SignPartReq struct {
-	UploadID             uint
-	PartNumber           int
-	ChunkHash            string
-	ChecksumSHA256Base64 string
+	UploadID   uint
+	PartNumber int
+	ChunkHash  string
 }
 
 type SignedPartResp struct {
@@ -134,6 +135,15 @@ func validateHashType(hashType string) error {
 		return ErrUnsupportedHashType
 	}
 	return nil
+}
+
+// checksumBase64FromHex 将十六进制SHA-256转换为base64
+func checksumBase64FromHex(chunkHash string) (string, error) {
+	raw, err := hex.DecodeString(strings.TrimSpace(chunkHash))
+	if err != nil || len(raw) == 0 {
+		return "", ErrUploadRequestInvalid
+	}
+	return base64.StdEncoding.EncodeToString(raw), nil
 }
 
 // collectPartHashes 收集分块哈希
@@ -319,8 +329,12 @@ func (s *FileService) InitChunkUpload(ctx context.Context, userID uint, req Chun
 
 // SignPartUpload 为分块上传签名
 func (s *FileService) SignPartUpload(ctx context.Context, userID uint, req SignPartReq) (SignedPartResp, error) {
-	if req.UploadID == 0 || req.PartNumber <= 0 || req.ChunkHash == "" || req.ChecksumSHA256Base64 == "" {
+	if req.UploadID == 0 || req.PartNumber <= 0 || strings.TrimSpace(req.ChunkHash) == "" {
 		return SignedPartResp{}, ErrUploadRequestInvalid
+	}
+	checksumSHA256Base64, err := checksumBase64FromHex(req.ChunkHash)
+	if err != nil {
+		return SignedPartResp{}, err
 	}
 	//查询上传会话
 	session, err := s.fileRepo.GetUploadSessionByID(ctx, req.UploadID, userID)
@@ -339,7 +353,7 @@ func (s *FileService) SignPartUpload(ctx context.Context, userID uint, req SignP
 		return SignedPartResp{}, errors.WithMessage(err, "保存分块哈希失败")
 	}
 	//生成上传URL
-	uploadURL, headers, err := s.storage.PresignUploadPart(ctx, session.ObjectName, session.StorageUploadID, req.PartNumber, req.ChecksumSHA256Base64, partUploadURLExpire)
+	uploadURL, headers, err := s.storage.PresignUploadPart(ctx, session.ObjectName, session.StorageUploadID, req.PartNumber, checksumSHA256Base64, partUploadURLExpire)
 	if err != nil {
 		return SignedPartResp{}, errors.WithMessage(err, "生成分块上传地址失败")
 	}
@@ -376,6 +390,7 @@ func (s *FileService) ReportUploadedPart(ctx context.Context, userID uint, req R
 
 // CompleteChunkUpload 完成分块上传
 func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sessionID uint) (uint, error) {
+	//查询上传会话
 	session, err := s.fileRepo.GetUploadSessionByID(ctx, sessionID, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -386,7 +401,7 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	if session.Status != uploadSessionStatusPending {
 		return 0, ErrUploadSessionInvalid
 	}
-
+	//校验哈希类型
 	if err := validateHashType(session.HashType); err != nil {
 		return 0, err
 	}
@@ -401,11 +416,12 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	if user.UsedSpace+session.FileSize > user.TotalSpace {
 		return 0, ErrUserSpaceNotEnough
 	}
-
+	//读取分块哈希
 	partHashes, err := s.uploadCache.ListPartHashes(ctx, session.ID)
 	if err != nil {
 		return 0, errors.WithMessage(err, "读取分块哈希失败")
 	}
+	//计算聚合哈希
 	chunkHashes, err := collectPartHashes(partHashes, session.ChunkCount)
 	if err != nil {
 		return 0, err
@@ -417,7 +433,7 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	if aggregateHash != session.FileHash {
 		return 0, ErrChunkFileHashMismatch
 	}
-
+	//读取分块ETag
 	partEtags, err := s.uploadCache.ListPartETags(ctx, session.ID)
 	if err != nil {
 		return 0, errors.WithMessage(err, "读取分块ETag失败")
@@ -425,6 +441,7 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	if len(partEtags) != session.ChunkCount {
 		return 0, ErrChunkUploadIncomplete
 	}
+	//组装分块合并请求参数
 	completeParts := make([]oss.CompletePart, 0, len(partEtags))
 	for index, part := range partEtags {
 		expected := index + 1
@@ -461,14 +478,17 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 			return ErrUploadSessionInvalid
 		}
 
+		//确保去重
 		fileStore, findErr := s.fileRepo.GetFileByIdentityForUpdate(ctx, session.HashType, session.FileHash, tx)
 		switch {
 		case findErr == nil:
+			//去重命中，创建秒传记录
 			uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, session.ParentID, session.FileName, fileStore.FileSize, fileStore)
 			if err != nil {
 				return err
 			}
 		case errors.Is(findErr, gorm.ErrRecordNotFound):
+			//去重未命中，创建文件元数据
 			newFileStore := &model.FileStore{
 				HashType: session.HashType,
 				FileHash: session.FileHash,
@@ -483,6 +503,7 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 				if !isDuplicateKeyError(createErr) {
 					return errors.WithMessage(createErr, "文件元数据存储失败")
 				}
+				//再次查询以去重
 				fileStore, createErr = s.fileRepo.GetFileByIdentityForUpdate(ctx, session.HashType, session.FileHash, tx)
 				if createErr != nil {
 					return errors.WithMessage(createErr, "查询并发写入的文件失败")
@@ -493,6 +514,7 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 				}
 				break
 			}
+			//创建用户文件记录
 			newUserFile := &model.UserFile{
 				UserId:      userID,
 				FileStoreID: &newFileStore.ID,

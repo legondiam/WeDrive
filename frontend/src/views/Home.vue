@@ -547,7 +547,6 @@ const filePondServer = {
                 upload_id: uploadId,
                 part_number: part.part_number,
                 chunk_hash: part.chunk_hash,
-                checksum_sha256_base64: part.checksum_sha256_base64,
               })
               if (finalized) return null
 

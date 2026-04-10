@@ -47,10 +47,9 @@ type initChunkUploadReq struct {
 }
 
 type signPartReq struct {
-	UploadID             uint   `json:"upload_id" binding:"required"`
-	PartNumber           int    `json:"part_number" binding:"required"`
-	ChunkHash            string `json:"chunk_hash" binding:"required"`
-	ChecksumSHA256Base64 string `json:"checksum_sha256_base64" binding:"required"`
+	UploadID   uint   `json:"upload_id" binding:"required"`
+	PartNumber int    `json:"part_number" binding:"required"`
+	ChunkHash  string `json:"chunk_hash" binding:"required"`
 }
 
 type reportUploadedPartReq struct {
@@ -213,10 +212,9 @@ func (h *FileHandler) SignPartUpload(c *gin.Context) {
 	}
 	userID, _ := c.Get("userID")
 	resp, err := h.fileService.SignPartUpload(c.Request.Context(), userID.(uint), service.SignPartReq{
-		UploadID:             req.UploadID,
-		PartNumber:           req.PartNumber,
-		ChunkHash:            req.ChunkHash,
-		ChecksumSHA256Base64: req.ChecksumSHA256Base64,
+		UploadID:   req.UploadID,
+		PartNumber: req.PartNumber,
+		ChunkHash:  req.ChunkHash,
 	})
 	if err != nil {
 		if errors.Is(err, service.ErrUploadRequestInvalid) {
@@ -276,6 +274,8 @@ func (h *FileHandler) CompleteChunkUpload(c *gin.Context) {
 	uploadedID, err := h.fileService.CompleteChunkUpload(c.Request.Context(), userID.(uint), req.UploadID)
 	if err != nil {
 		switch {
+		case errors.Is(err, service.ErrUploadRequestInvalid):
+			response.BusinessError(c, response.CodeInvalidParam, "上传请求无效")
 		case errors.Is(err, service.ErrUserSpaceNotEnough):
 			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
 		case errors.Is(err, service.ErrUploadSessionInvalid):
