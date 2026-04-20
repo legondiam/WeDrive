@@ -31,6 +31,8 @@ var ErrChunkFileHashMismatch = errors.New("文件哈希不匹配")
 var ErrUnsupportedHashType = errors.New("不支持的哈希规则")
 var ErrUploadRequestInvalid = errors.New("上传请求无效")
 var ErrUploadMethodInvalid = errors.New("上传方式不符合文件大小规则")
+var ErrChunkAlreadyUploaded = errors.New("分块已上传完成")
+var ErrChunkHashConflict = errors.New("分块哈希与历史记录冲突")
 
 const (
 	uploadSessionStatusPending   = "pending"
@@ -352,6 +354,22 @@ func (s *FileService) SignPartUpload(ctx context.Context, userID uint, req SignP
 	//会话失效或分块序号不合法
 	if session.Status != uploadSessionStatusPending || req.PartNumber > session.ChunkCount {
 		return SignedPartResp{}, ErrUploadSessionInvalid
+	}
+	///检查分块是否已上传
+	uploadedETag, etagExists, err := s.uploadCache.GetPartETag(ctx, session.ID, req.PartNumber)
+	if err != nil {
+		return SignedPartResp{}, errors.WithMessage(err, "读取分块ETag失败")
+	}
+	if etagExists && strings.TrimSpace(uploadedETag) != "" {
+		return SignedPartResp{}, ErrChunkAlreadyUploaded
+	}
+	//检查分块是否变化
+	existingHash, hashExists, err := s.uploadCache.GetPartHash(ctx, session.ID, req.PartNumber)
+	if err != nil {
+		return SignedPartResp{}, errors.WithMessage(err, "读取分块哈希失败")
+	}
+	if hashExists && existingHash != req.ChunkHash {
+		return SignedPartResp{}, ErrChunkHashConflict
 	}
 	//保存分块哈希
 	if err := s.uploadCache.SetPartHash(ctx, session.ID, req.PartNumber, req.ChunkHash, uploadStateExpire); err != nil {

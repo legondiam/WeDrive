@@ -229,6 +229,14 @@ func (h *FileHandler) SignPartUpload(c *gin.Context) {
 			response.BusinessError(c, response.CodeInvalidParam, "上传请求无效")
 			return
 		}
+		if errors.Is(err, service.ErrChunkAlreadyUploaded) {
+			response.BusinessError(c, response.CodeChunkAlreadyUploaded, "分块已上传完成")
+			return
+		}
+		if errors.Is(err, service.ErrChunkHashConflict) {
+			response.BusinessError(c, response.CodeChunkHashConflict, "分块哈希与历史记录冲突，请重新初始化上传")
+			return
+		}
 		if errors.Is(err, service.ErrUploadSessionInvalid) {
 			response.BusinessError(c, response.CodeUploadSessionInvalid, "上传会话无效")
 			return

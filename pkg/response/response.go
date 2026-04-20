@@ -29,6 +29,8 @@ const (
 	CodeChunkUploadIncomplete = 3005 // 分块上传未完成
 	CodeChunkFileHashMismatch = 3006 // 分块文件校验失败
 	CodeUploadMethodInvalid   = 3007 // 上传方式不符合文件大小规则
+	CodeChunkAlreadyUploaded  = 3008 // 分块已上传完成
+	CodeChunkHashConflict     = 3009 // 分块哈希与历史记录冲突
 
 	// 分享模块
 	CodeShareNotFound   = 4001 // 分享不存在

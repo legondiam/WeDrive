@@ -387,6 +387,8 @@ import { createShare, downloadShare } from '../api/share'
 import { calculateFileSHA256, calculateFileSampleSHA256, calculateChunkIdentity, CHUNK_IDENTITY_SIZE } from '../lib/sha256'
 
 const CODE_INSTANT_UNAVAILABLE = 3003
+const CODE_CHUNK_ALREADY_UPLOADED = 3008
+const CODE_CHUNK_HASH_CONFLICT = 3009
 const CHUNK_UPLOAD_THRESHOLD = 16 * 1024 * 1024
 const HASH_TYPE = 'full_sha256_v1'
 const CHUNK_SIZE = CHUNK_IDENTITY_SIZE
@@ -552,11 +554,24 @@ const filePondServer = {
                 continue
               }
 
-              const signRes = await signPartUpload({
-                upload_id: uploadId,
-                part_number: part.part_number,
-                chunk_hash: part.chunk_hash,
-              })
+              let signRes = null
+              try {
+                signRes = await signPartUpload({
+                  upload_id: uploadId,
+                  part_number: part.part_number,
+                  chunk_hash: part.chunk_hash,
+                })
+              } catch (err) {
+                if (err?.code === CODE_CHUNK_ALREADY_UPLOADED) {
+                  uploadedChunks.add(part.part_number)
+                  progress(true, end, file.size || 1)
+                  continue
+                }
+                if (err?.code === CODE_CHUNK_HASH_CONFLICT) {
+                  throw new Error('文件内容已变化，请重新开始上传')
+                }
+                throw err
+              }
               if (finalized) return null
 
               const directRes = await uploadChunkDirect(

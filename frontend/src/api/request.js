@@ -11,7 +11,7 @@ function createRequestError(message, code) {
 }
 
 function shouldToastBusinessError(code) {
-  return code !== 3003
+  return code !== 3003 && code !== 3008 && code !== 3009
 }
 
 const service = axios.create({

@@ -92,6 +92,29 @@ func (r *UploadCacheRepo) getSortedPartValues(ctx context.Context, key string) (
 	return parts, nil
 }
 
+// getPartValue 读取指定分块的状态值。
+func (r *UploadCacheRepo) getPartValue(ctx context.Context, key string, partNumber int) (string, bool, error) {
+	number := strconv.FormatInt(int64(partNumber), 10)
+	values, err := r.client.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+		Min: number,
+		Max: number,
+	}).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", false, nil
+		}
+		return "", false, errors.WithStack(err)
+	}
+	if len(values) == 0 {
+		return "", false, nil
+	}
+	partState, decodeErr := decodePartState(values[0])
+	if decodeErr != nil {
+		return "", false, decodeErr
+	}
+	return partState.Value, true, nil
+}
+
 // SetPartHash 保存某个分块的哈希值
 func (r *UploadCacheRepo) SetPartHash(ctx context.Context, sessionID uint, partNumber int, hash string, expire time.Duration) error {
 	return r.setSortedPartValue(ctx, r.partHashesKey(sessionID), partNumber, hash, expire)
@@ -107,9 +130,19 @@ func (r *UploadCacheRepo) ListPartHashes(ctx context.Context, sessionID uint) ([
 	return r.getSortedPartValues(ctx, r.partHashesKey(sessionID))
 }
 
+// GetPartHash 读取某个分块的哈希值。
+func (r *UploadCacheRepo) GetPartHash(ctx context.Context, sessionID uint, partNumber int) (string, bool, error) {
+	return r.getPartValue(ctx, r.partHashesKey(sessionID), partNumber)
+}
+
 // ListPartETags 按序列出当前上传会话的全部分块 ETag
 func (r *UploadCacheRepo) ListPartETags(ctx context.Context, sessionID uint) ([]UploadPartState, error) {
 	return r.getSortedPartValues(ctx, r.partEtagsKey(sessionID))
+}
+
+// GetPartETag 读取某个分块的 ETag。
+func (r *UploadCacheRepo) GetPartETag(ctx context.Context, sessionID uint, partNumber int) (string, bool, error) {
+	return r.getPartValue(ctx, r.partEtagsKey(sessionID), partNumber)
 }
 
 // ListUploadedParts 返回成功回报 ETag 的分块列表，用于断点续传时跳过已上传分块。
