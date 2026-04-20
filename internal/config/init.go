@@ -56,14 +56,21 @@ type CookieConf struct {
 	HttpOnly bool   `mapstructure:"http_only"`
 	SameSite string `mapstructure:"same_site"`
 }
+type UploadCleanupConf struct {
+	Enabled     bool          `mapstructure:"enabled"`
+	Interval    time.Duration `mapstructure:"interval"`
+	ExpireAfter time.Duration `mapstructure:"expire_after"`
+	BatchSize   int           `mapstructure:"batch_size"`
+}
 type Conf struct {
-	App      AppConf      `mapstructure:"app"`
-	DB       DbConf       `mapstructure:"database"`
-	Jwt      JwtConf      `mapstructure:"jwt"`
-	Minio    MinioConf    `mapstructure:"minio"`
-	Download DownloadConf `mapstructure:"download"`
-	Admin    AdminConf    `mapstructure:"admin"`
-	Cookie   CookieConf   `mapstructure:"cookie"`
+	App           AppConf           `mapstructure:"app"`
+	DB            DbConf            `mapstructure:"database"`
+	Jwt           JwtConf           `mapstructure:"jwt"`
+	Minio         MinioConf         `mapstructure:"minio"`
+	Download      DownloadConf      `mapstructure:"download"`
+	Admin         AdminConf         `mapstructure:"admin"`
+	Cookie        CookieConf        `mapstructure:"cookie"`
+	UploadCleanup UploadCleanupConf `mapstructure:"upload_cleanup"`
 }
 
 var GlobalConf Conf

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/minio/minio-go/v7"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -148,6 +149,14 @@ func checksumBase64FromHex(chunkHash string) (string, error) {
 		return "", ErrUploadRequestInvalid
 	}
 	return base64.StdEncoding.EncodeToString(raw), nil
+}
+
+func isMultipartUploadNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	resp := minio.ToErrorResponse(errors.Cause(err))
+	return resp.Code == minio.NoSuchUpload
 }
 
 // collectPartHashes 收集分块哈希
@@ -284,6 +293,9 @@ func (s *FileService) InitChunkUpload(ctx context.Context, userID uint, req Chun
 	if err == nil {
 		//该上传会话可用
 		if session.FileSize == req.FileSize && session.ChunkSize == req.ChunkSize && session.ChunkCount == req.ChunkCount && session.ObjectName != "" && session.StorageUploadID != "" {
+			if touchErr := s.fileRepo.TouchUploadSession(ctx, session.ID); touchErr != nil {
+				return ChunkUploadInitResp{}, errors.WithMessage(touchErr, "刷新上传会话活跃时间失败")
+			}
 			uploadedParts, cacheErr := s.uploadCache.ListUploadedParts(ctx, session.ID)
 			if cacheErr != nil {
 				return ChunkUploadInitResp{}, errors.WithMessage(cacheErr, "查询已上传分块失败")
@@ -376,6 +388,9 @@ func (s *FileService) SignPartUpload(ctx context.Context, userID uint, req SignP
 		return SignedPartResp{}, errors.WithMessage(err, "保存分块哈希失败")
 	}
 	//生成上传URL
+	if err := s.fileRepo.TouchUploadSession(ctx, session.ID); err != nil {
+		return SignedPartResp{}, errors.WithMessage(err, "刷新上传会话活跃时间失败")
+	}
 	uploadURL, headers, err := s.storage.PresignUploadPart(ctx, session.ObjectName, session.StorageUploadID, req.PartNumber, checksumSHA256Base64, partUploadURLExpire)
 	if err != nil {
 		return SignedPartResp{}, errors.WithMessage(err, "生成分块上传地址失败")
@@ -997,4 +1012,43 @@ func (s *FileService) GetDownloadURL(ctx context.Context, userID uint, userFileI
 		return DownloadFileResp{}, errors.WithMessage(err, "下载URL获取失败")
 	}
 	return DownloadFileResp{URL: url, FileName: fileName}, nil
+}
+
+// CleanupExpiredUploadSessions 清理超时未完成的分块上传会话
+func (s *FileService) CleanupExpiredUploadSessions(ctx context.Context, expireBefore time.Time, limit int) (int, error) {
+	//获取已超时的会话
+	sessions, err := s.fileRepo.ListExpiredPendingUploadSessions(ctx, expireBefore, limit)
+	if err != nil {
+		return 0, errors.WithMessage(err, "查询超时上传会话失败")
+	}
+	cleaned := 0
+	for _, session := range sessions {
+		if err := s.cleanupExpiredUploadSession(ctx, session); err != nil {
+			logger.S.Errorf("清理僵尸分块上传失败, uploadID: %d, objectName: %s, err: %+v", session.ID, session.ObjectName, err)
+			continue
+		}
+		cleaned++
+	}
+	return cleaned, nil
+}
+
+// cleanupExpiredUploadSession 清理某条僵尸会话
+func (s *FileService) cleanupExpiredUploadSession(ctx context.Context, session model.UploadSession) error {
+	if session.Status != uploadSessionStatusPending {
+		return nil
+	}
+	if session.ObjectName != "" && session.StorageUploadID != "" {
+		err := s.storage.AbortMultipartUpload(ctx, session.ObjectName, session.StorageUploadID)
+		if err != nil && !isMultipartUploadNotFound(err) {
+			return errors.WithMessage(err, "终止 MinIO 分块上传失败")
+		}
+	}
+	if err := s.uploadCache.DeleteUploadState(ctx, session.ID); err != nil {
+		return errors.WithMessage(err, "删除 Redis 上传状态失败")
+	}
+	if err := s.fileRepo.DeleteUploadSession(ctx, session.ID); err != nil {
+		return errors.WithMessage(err, "删除上传会话失败")
+	}
+	logger.S.Infof("清理僵尸分块上传成功, uploadID: %d, objectName: %s", session.ID, session.ObjectName)
+	return nil
 }

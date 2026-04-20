@@ -27,3 +27,8 @@ jwt:
   Issuer: "JwtConfigAdmin"
   AccessTokenExpiration: "10m"
   RefreshTokenExpiration: "168h"
+upload_cleanup:
+  enabled: true
+  interval: "10m"
+  expire_after: "24h"
+  batch_size: 100

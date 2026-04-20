@@ -11,19 +11,19 @@ func main() {
 	logger.Init()
 	defer logger.S.Sync()
 
-	err := config.Init()
-	if err != nil {
+	if err := config.Init(); err != nil {
 		logger.S.Fatalf("加载配置失败:%+v", err)
 		return
 	}
-	err, r := app.Init()
+
+	application, err := app.Init()
 	if err != nil {
 		logger.S.Fatalf("依赖初始化失败:%+v", err)
 		return
 	}
+	application.StartBackgroundJobs()
 
 	logger.S.Info("服务启动成功")
 	addr := fmt.Sprintf("0.0.0.0:%d", config.GlobalConf.App.Port)
-	r.Run(addr)
-
+	application.Engine.Run(addr)
 }

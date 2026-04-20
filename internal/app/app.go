@@ -2,25 +2,46 @@ package app
 
 import (
 	"WeDrive/internal/initialize"
+
 	"github.com/gin-gonic/gin"
+	"github.com/minio/minio-go/v7"
 	"github.com/pkg/errors"
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
-// 全局依赖容器
+type App struct {
+	Engine *gin.Engine
+	db     *gorm.DB
+	redis  *redis.Client
+	minio  *minio.Client
+}
 
-func Init() (error, *gin.Engine) {
+func Init() (*App, error) {
 	db, err := initialize.MysqlInit()
 	if err != nil {
-		return errors.WithMessage(err, "mysql初始化失败"), nil
+		return nil, errors.WithMessage(err, "mysql初始化失败")
 	}
-	redis, err := initialize.RedisInit()
+	redisClient, err := initialize.RedisInit()
 	if err != nil {
-		return errors.WithMessage(err, "redis初始化失败"), nil
+		return nil, errors.WithMessage(err, "redis初始化失败")
 	}
-	minio, err := initialize.MinioInit()
+	minioClient, err := initialize.MinioInit()
 	if err != nil {
-		return errors.WithMessage(err, "minio初始化失败"), nil
+		return nil, errors.WithMessage(err, "minio初始化失败")
 	}
-	engine := BuildApp(db, redis, minio)
-	return nil, engine
+	engine := BuildApp(db, redisClient, minioClient)
+	return &App{
+		Engine: engine,
+		db:     db,
+		redis:  redisClient,
+		minio:  minioClient,
+	}, nil
+}
+
+func (a *App) StartBackgroundJobs() {
+	if a == nil {
+		return
+	}
+	startBackgroundJobs(a.db, a.redis, a.minio)
 }
