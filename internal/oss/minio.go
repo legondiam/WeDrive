@@ -2,6 +2,7 @@ package oss
 
 import (
 	"WeDrive/internal/config"
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/base64"
@@ -143,6 +144,28 @@ func (s *Storage) GetObject(ctx context.Context, objectName string) (*minio.Obje
 		return nil, errors.WithStack(err)
 	}
 	return object, nil
+}
+
+// ReadFileRange 读取对象指定字节区间，用于所有权证明校验
+func (s *Storage) ReadFileRange(ctx context.Context, objectName string, offset int64, length int64) ([]byte, error) {
+	if offset < 0 || length <= 0 {
+		return nil, errors.New("invalid object range")
+	}
+	opts := minio.GetObjectOptions{}
+	if err := opts.SetRange(offset, offset+length-1); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	object, err := s.client.GetObject(ctx, config.GlobalConf.Minio.BucketName, objectName, opts)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	defer object.Close()
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, object); err != nil {
+		return nil, errors.WithStack(err)
+	}
+	return buf.Bytes(), nil
 }
 
 // DeleteFile 删除文件

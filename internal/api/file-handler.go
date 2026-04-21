@@ -4,6 +4,7 @@ import (
 	"WeDrive/internal/service"
 	"WeDrive/pkg/logger"
 	"WeDrive/pkg/response"
+	"WeDrive/pkg/utils/hash"
 	"errors"
 	"strconv"
 
@@ -19,11 +20,36 @@ func NewFileHandler(fileService *service.FileService) *FileHandler {
 }
 
 type instantUploadReq struct {
-	HashType string `json:"hash_type" binding:"required"`
-	FileHash string `json:"file_hash" binding:"required"`
-	FileName string `json:"file_name" binding:"required"`
-	FileSize int64  `json:"file_size"`
-	ParentID uint   `json:"parent_id"`
+	HashType   string `json:"hash_type" binding:"required"`
+	FileHash   string `json:"file_hash" binding:"required"`
+	FileName   string `json:"file_name" binding:"required"`
+	FileSize   int64  `json:"file_size"`
+	ParentID   uint   `json:"parent_id"`
+	PrepareID  string `json:"prepare_id" binding:"required"`
+	ProofToken string `json:"proof_token" binding:"required"`
+}
+
+type prepareInstantUploadReq struct {
+	HashType   string `json:"hash_type" binding:"required"`
+	FileHash   string `json:"file_hash" binding:"required"`
+	FileName   string `json:"file_name" binding:"required"`
+	FileSize   int64  `json:"file_size"`
+	ParentID   uint   `json:"parent_id"`
+	MerkleType string `json:"merkle_type" binding:"required"`
+	MerkleRoot string `json:"merkle_root" binding:"required"`
+}
+
+type verifyInstantUploadProofReq struct {
+	PrepareID string `json:"prepare_id" binding:"required"`
+	Proofs    []struct {
+		PartNumber    int    `json:"part_number" binding:"required"`
+		LeafHash      string `json:"leaf_hash" binding:"required"`
+		ChallengeHash string `json:"challenge_hash" binding:"required"`
+		Proof         []struct {
+			Hash     string `json:"hash" binding:"required"`
+			Position string `json:"position" binding:"required"`
+		} `json:"proof" binding:"required"`
+	} `json:"proofs" binding:"required"`
 }
 
 type quickCheckReq struct {
@@ -130,6 +156,65 @@ func (h *FileHandler) QuickCheck(c *gin.Context) {
 	response.Success(c, matched)
 }
 
+// PrepareInstantUpload 秒传所有权证明准备
+func (h *FileHandler) PrepareInstantUpload(c *gin.Context) {
+	var req prepareInstantUploadReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
+		return
+	}
+	userID, _ := c.Get("userID")
+	resp, err := h.fileService.PrepareInstantUpload(c.Request.Context(), userID.(uint), service.PrepareInstantUploadReq{
+		HashType:   req.HashType,
+		FileHash:   req.FileHash,
+		FileName:   req.FileName,
+		FileSize:   req.FileSize,
+		ParentID:   req.ParentID,
+		MerkleType: req.MerkleType,
+		MerkleRoot: req.MerkleRoot,
+	})
+	if err != nil {
+		h.handleInstantUploadError(c, err)
+		return
+	}
+	response.Success(c, resp)
+}
+
+// VerifyInstantUploadProof 校验秒传所有权证明
+func (h *FileHandler) VerifyInstantUploadProof(c *gin.Context) {
+	var req verifyInstantUploadProofReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
+		return
+	}
+	proofs := make([]service.MerkleProofItem, 0, len(req.Proofs))
+	for _, item := range req.Proofs {
+		nodes := make([]hash.MerkleProofNode, 0, len(item.Proof))
+		for _, node := range item.Proof {
+			nodes = append(nodes, hash.MerkleProofNode{
+				Hash:     node.Hash,
+				Position: node.Position,
+			})
+		}
+		proofs = append(proofs, service.MerkleProofItem{
+			PartNumber:    item.PartNumber,
+			LeafHash:      item.LeafHash,
+			ChallengeHash: item.ChallengeHash,
+			Proof:         nodes,
+		})
+	}
+	userID, _ := c.Get("userID")
+	resp, err := h.fileService.VerifyInstantUploadProof(c.Request.Context(), userID.(uint), service.VerifyInstantUploadProofReq{
+		PrepareID: req.PrepareID,
+		Proofs:    proofs,
+	})
+	if err != nil {
+		h.handleInstantUploadError(c, err)
+		return
+	}
+	response.Success(c, resp)
+}
+
 // InstantUpload 秒传
 func (h *FileHandler) InstantUpload(c *gin.Context) {
 	var req instantUploadReq
@@ -138,26 +223,9 @@ func (h *FileHandler) InstantUpload(c *gin.Context) {
 		return
 	}
 	userID, _ := c.Get("userID")
-	uploadedID, err := h.fileService.InstantUpload(c.Request.Context(), userID.(uint), req.ParentID, req.HashType, req.FileName, req.FileHash, req.FileSize)
+	uploadedID, err := h.fileService.InstantUpload(c.Request.Context(), userID.(uint), req.ParentID, req.HashType, req.FileName, req.FileHash, req.FileSize, req.PrepareID, req.ProofToken)
 	if err != nil {
-		if errors.Is(err, service.ErrParentFolderInvalid) {
-			response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
-			return
-		}
-		if errors.Is(err, service.ErrUnsupportedHashType) {
-			response.BusinessError(c, response.CodeInvalidParam, "hash_type不支持")
-			return
-		}
-		if errors.Is(err, service.ErrUserSpaceNotEnough) {
-			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
-			return
-		}
-		if errors.Is(err, service.ErrInstantUploadUnavailable) {
-			response.BusinessError(c, response.CodeInstantUnavailable, "不允许秒传")
-			return
-		}
-		response.ServerError(c, "秒传失败")
-		logger.S.Errorf("秒传失败：%v", err)
+		h.handleInstantUploadError(c, err)
 		return
 	}
 	response.Success(c, gin.H{"instant": true, "id": uploadedID})
@@ -484,4 +552,37 @@ func (h *FileHandler) GetDownloadURL(c *gin.Context) {
 		return
 	}
 	response.Success(c, downloadFileResp)
+}
+
+func (h *FileHandler) handleInstantUploadError(c *gin.Context, err error) {
+	if errors.Is(err, service.ErrParentFolderInvalid) {
+		response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
+		return
+	}
+	if errors.Is(err, service.ErrUnsupportedHashType) {
+		response.BusinessError(c, response.CodeInvalidParam, "hash_type不支持")
+		return
+	}
+	if errors.Is(err, service.ErrUserSpaceNotEnough) {
+		response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
+		return
+	}
+	if errors.Is(err, service.ErrInstantUploadUnavailable) {
+		response.BusinessError(c, response.CodeInstantUnavailable, "不允许秒传")
+		return
+	}
+	if errors.Is(err, service.ErrInstantProofRequired) {
+		response.BusinessError(c, response.CodeInstantProofRequired, "需要先完成所有权证明")
+		return
+	}
+	if errors.Is(err, service.ErrInstantProofInvalid) {
+		response.BusinessError(c, response.CodeInstantProofInvalid, "所有权证明无效或已过期")
+		return
+	}
+	if errors.Is(err, service.ErrUploadRequestInvalid) {
+		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
+		return
+	}
+	response.ServerError(c, "秒传失败")
+	logger.S.Errorf("秒传失败：%v", err)
 }

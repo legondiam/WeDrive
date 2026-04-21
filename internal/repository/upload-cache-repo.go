@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -32,6 +33,14 @@ func (r *UploadCacheRepo) partHashesKey(sessionID uint) string {
 // partEtagsKey 返回分块ETag有序集合 key。
 func (r *UploadCacheRepo) partEtagsKey(sessionID uint) string {
 	return fmt.Sprintf("upload_session:%d:part_etags", sessionID)
+}
+
+func (r *UploadCacheRepo) instantPrepareKey(prepareID string) string {
+	return fmt.Sprintf("instant_prepare:%s", prepareID)
+}
+
+func (r *UploadCacheRepo) instantProofTokenKey(token string) string {
+	return fmt.Sprintf("instant_proof_token:%s", token)
 }
 
 // encodePartState 将分块编号和值编码为 Redis member，避免仅用值时无法区分重复分块哈希/ETag。
@@ -162,6 +171,62 @@ func (r *UploadCacheRepo) ListUploadedParts(ctx context.Context, sessionID uint)
 func (r *UploadCacheRepo) DeleteUploadState(ctx context.Context, sessionID uint) error {
 	err := r.client.Del(ctx, r.partHashesKey(sessionID), r.partEtagsKey(sessionID)).Err()
 	if err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
+func (r *UploadCacheRepo) SetInstantPrepare(ctx context.Context, prepareID string, payload any, expire time.Duration) error {
+	return r.setJSONValue(ctx, r.instantPrepareKey(prepareID), payload, expire)
+}
+
+func (r *UploadCacheRepo) GetInstantPrepare(ctx context.Context, prepareID string, target any) (bool, error) {
+	return r.getJSONValue(ctx, r.instantPrepareKey(prepareID), target)
+}
+
+func (r *UploadCacheRepo) DeleteInstantPrepare(ctx context.Context, prepareID string) error {
+	return r.deleteKey(ctx, r.instantPrepareKey(prepareID))
+}
+
+func (r *UploadCacheRepo) SetInstantProofToken(ctx context.Context, token string, payload any, expire time.Duration) error {
+	return r.setJSONValue(ctx, r.instantProofTokenKey(token), payload, expire)
+}
+
+func (r *UploadCacheRepo) GetInstantProofToken(ctx context.Context, token string, target any) (bool, error) {
+	return r.getJSONValue(ctx, r.instantProofTokenKey(token), target)
+}
+
+func (r *UploadCacheRepo) DeleteInstantProofToken(ctx context.Context, token string) error {
+	return r.deleteKey(ctx, r.instantProofTokenKey(token))
+}
+
+func (r *UploadCacheRepo) setJSONValue(ctx context.Context, key string, payload any, expire time.Duration) error {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if err := r.client.Set(ctx, key, raw, expire).Err(); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
+func (r *UploadCacheRepo) getJSONValue(ctx context.Context, key string, target any) (bool, error) {
+	raw, err := r.client.Get(ctx, key).Bytes()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return false, nil
+		}
+		return false, errors.WithStack(err)
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		return false, errors.WithStack(err)
+	}
+	return true, nil
+}
+
+func (r *UploadCacheRepo) deleteKey(ctx context.Context, key string) error {
+	if err := r.client.Del(ctx, key).Err(); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil

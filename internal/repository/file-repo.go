@@ -118,6 +118,15 @@ func (r *FileRepo) CreateFileStore(ctx context.Context, file *model.FileStore, t
 	return db.WithContext(ctx).Create(file).Error
 }
 
+// SaveFileStore 更新文件池元数据
+func (r *FileRepo) SaveFileStore(ctx context.Context, file *model.FileStore, tx ...*gorm.DB) error {
+	db := r.db
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	return db.WithContext(ctx).Save(file).Error
+}
+
 // CreateUserFile 插入用户文件记录
 func (r *FileRepo) CreateUserFile(ctx context.Context, userFile *model.UserFile, tx ...*gorm.DB) error {
 	db := r.db

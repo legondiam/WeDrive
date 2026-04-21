@@ -3,7 +3,6 @@ package router
 import (
 	"WeDrive/internal/api"
 	"WeDrive/internal/middleware"
-
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,22 +10,23 @@ import (
 
 func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, shareHandler *api.ShareHandler) *gin.Engine {
 	r := gin.Default()
+
 	publicGroup := r.Group("/api/v1")
 	publicGroup.Use(middleware.TimeoutMiddleware(3 * time.Second))
 	{
 		publicGroup.POST("/user/register", userHandler.Register)
 		publicGroup.POST("/user/login", userHandler.Login)
 		publicGroup.POST("/user/refresh", userHandler.Refresh)
-
 		publicGroup.POST("/share/download", shareHandler.GetShareDownloadURL)
-
 	}
+
 	privateGroup := publicGroup.Group("/")
 	privateGroup.Use(middleware.AuthMiddleware())
 	{
-
 		privateGroup.POST("/file/upload-folder", fileHandler.CreateFolder)
 		privateGroup.POST("/file/quick-check", fileHandler.QuickCheck)
+		privateGroup.POST("/file/instant-upload/prepare", fileHandler.PrepareInstantUpload)
+		privateGroup.POST("/file/instant-upload/verify", fileHandler.VerifyInstantUploadProof)
 		privateGroup.POST("/file/instant-upload", fileHandler.InstantUpload)
 		privateGroup.POST("/file/upload/init", fileHandler.InitChunkUpload)
 		privateGroup.POST("/file/upload/sign-part", fileHandler.SignPartUpload)
@@ -38,12 +38,9 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 		privateGroup.DELETE("/file/permanent-delete/:ID", fileHandler.PermanentlyDelete)
 		privateGroup.GET("/file/recycle", fileHandler.ListRecycleBin)
 		privateGroup.POST("/file/restore/:ID", fileHandler.Restore)
-
 		privateGroup.GET("/user/info", userHandler.GetUserInfo)
 		privateGroup.GET("/file/download/:ID", fileHandler.GetDownloadURL)
-
 		privateGroup.POST("/share/create", shareHandler.CreateShareFile)
-
 	}
 
 	timeoutGroup := r.Group("/api/v1")
@@ -58,5 +55,6 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 	{
 		adminGroup.POST("/user/update-member", userHandler.UpdateUserMember)
 	}
+
 	return r
 }

@@ -7,47 +7,43 @@ import (
 )
 
 const (
-	// 通用
 	CodeOK              = 0
-	CodeInvalidParam    = 1001 // JSON/form/path/query 参数不合法
-	CodeMissingFile     = 1002 // 缺少上传文件
-	CodeInvalidParentID = 1003 // parent_id 无效
-	CodeInvalidFileID   = 1004 // 文件ID无效
-	CodeUnauthorized    = 1005 // 未授权
-	CodeForbidden       = 1006 // 禁止访问
+	CodeInvalidParam    = 1001
+	CodeMissingFile     = 1002
+	CodeInvalidParentID = 1003
+	CodeInvalidFileID   = 1004
+	CodeUnauthorized    = 1005
+	CodeForbidden       = 1006
 
-	// 用户模块
-	CodeUserExisted         = 2001 // 用户已存在
-	CodeAccountOrPassword   = 2002 // 用户名或密码错误
-	CodeRefreshTokenMissing = 2003 // refreshToken不存在/无效
+	CodeUserExisted         = 2001
+	CodeAccountOrPassword   = 2002
+	CodeRefreshTokenMissing = 2003
 
-	// 文件模块
-	CodeUserSpaceNotEnough    = 3001 // 用户空间不足
-	CodeFileNotFound          = 3002 // 文件不存在
-	CodeInstantUnavailable    = 3003 // 秒传条件失效
-	CodeUploadSessionInvalid  = 3004 // 上传会话无效
-	CodeChunkUploadIncomplete = 3005 // 分块上传未完成
-	CodeChunkFileHashMismatch = 3006 // 分块文件校验失败
-	CodeUploadMethodInvalid   = 3007 // 上传方式不符合文件大小规则
-	CodeChunkAlreadyUploaded  = 3008 // 分块已上传完成
-	CodeChunkHashConflict     = 3009 // 分块哈希与历史记录冲突
+	CodeUserSpaceNotEnough    = 3001
+	CodeFileNotFound          = 3002
+	CodeInstantUnavailable    = 3003
+	CodeUploadSessionInvalid  = 3004
+	CodeChunkUploadIncomplete = 3005
+	CodeChunkFileHashMismatch = 3006
+	CodeUploadMethodInvalid   = 3007
+	CodeChunkAlreadyUploaded  = 3008
+	CodeChunkHashConflict     = 3009
+	CodeInstantProofRequired  = 3010
+	CodeInstantProofInvalid   = 3011
 
-	// 分享模块
-	CodeShareNotFound   = 4001 // 分享不存在
-	CodeShareExpired    = 4002 // 分享已过期
-	CodeShareInvalidKey = 4003 // 分享密钥不正确
+	CodeShareNotFound   = 4001
+	CodeShareExpired    = 4002
+	CodeShareInvalidKey = 4003
 
-	// 服务端
-	CodeInternal = 5000 // 未分类服务端错误
+	CodeInternal = 5000
 )
 
 type Body struct {
 	Code int         `json:"code"`
 	Msg  string      `json:"msg"`
-	Data interface{} `json:"data,omitempty"` //为空时不返回
+	Data interface{} `json:"data,omitempty"`
 }
 
-// Success 成功响应
 func Success(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusOK, Body{
 		Code: CodeOK,
@@ -56,7 +52,6 @@ func Success(c *gin.Context, data interface{}) {
 	})
 }
 
-// BusinessError 业务错误响应
 func BusinessError(c *gin.Context, code int, msg string) {
 	c.JSON(http.StatusBadRequest, Body{
 		Code: code,
@@ -64,7 +59,6 @@ func BusinessError(c *gin.Context, code int, msg string) {
 	})
 }
 
-// ServerError 服务器错误响应
 func ServerError(c *gin.Context, msg string) {
 	c.JSON(http.StatusInternalServerError, Body{
 		Code: CodeInternal,
