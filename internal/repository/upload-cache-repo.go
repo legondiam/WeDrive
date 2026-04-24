@@ -40,11 +40,6 @@ func (r *UploadCacheRepo) instantPrepareKey(prepareID string) string {
 	return fmt.Sprintf("instant_prepare:%s", prepareID)
 }
 
-// instantProofTokenKey 返回秒传令牌key
-func (r *UploadCacheRepo) instantProofTokenKey(token string) string {
-	return fmt.Sprintf("instant_proof_token:%s", token)
-}
-
 // encodePartState 将分块编号和值编码为 Redis member，避免仅用值时无法区分重复分块哈希/ETag。
 func encodePartState(partNumber int, value string) string {
 	return fmt.Sprintf("%d|%s", partNumber, value)
@@ -192,21 +187,6 @@ func (r *UploadCacheRepo) GetInstantPrepare(ctx context.Context, prepareID strin
 // DeleteInstantPrepare 删除秒传挑战准备态。
 func (r *UploadCacheRepo) DeleteInstantPrepare(ctx context.Context, prepareID string) error {
 	return r.deleteKey(ctx, r.instantPrepareKey(prepareID))
-}
-
-// SetInstantProofToken 保存秒传令牌
-func (r *UploadCacheRepo) SetInstantProofToken(ctx context.Context, token string, payload any, expire time.Duration) error {
-	return r.setJSONValue(ctx, r.instantProofTokenKey(token), payload, expire)
-}
-
-// GetInstantProofToken 读取秒传令牌
-func (r *UploadCacheRepo) GetInstantProofToken(ctx context.Context, token string, target any) (bool, error) {
-	return r.getJSONValue(ctx, r.instantProofTokenKey(token), target)
-}
-
-// DeleteInstantProofToken 删除秒传凭证
-func (r *UploadCacheRepo) DeleteInstantProofToken(ctx context.Context, token string) error {
-	return r.deleteKey(ctx, r.instantProofTokenKey(token))
 }
 
 func (r *UploadCacheRepo) setJSONValue(ctx context.Context, key string, payload any, expire time.Duration) error {

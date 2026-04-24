@@ -24,10 +24,6 @@ export function prepareInstantUpload(payload) {
   return request.post('/file/instant-upload/prepare', payload)
 }
 
-export function verifyInstantUploadProof(payload) {
-  return request.post('/file/instant-upload/verify', payload)
-}
-
 export function quickCheck(payload) {
   return request.post('/file/quick-check', payload)
 }

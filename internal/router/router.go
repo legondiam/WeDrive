@@ -26,7 +26,6 @@ func NewRouter(userHandler *api.UserHandler, fileHandler *api.FileHandler, share
 		privateGroup.POST("/file/upload-folder", fileHandler.CreateFolder)
 		privateGroup.POST("/file/quick-check", fileHandler.QuickCheck)
 		privateGroup.POST("/file/instant-upload/prepare", fileHandler.PrepareInstantUpload)
-		privateGroup.POST("/file/instant-upload/verify", fileHandler.VerifyInstantUploadProof)
 		privateGroup.POST("/file/instant-upload", fileHandler.InstantUpload)
 		privateGroup.POST("/file/upload/init", fileHandler.InitChunkUpload)
 		privateGroup.POST("/file/upload/sign-part", fileHandler.SignPartUpload)

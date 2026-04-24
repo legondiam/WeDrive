@@ -382,7 +382,7 @@ import DropdownMenuRadioItem from '@/components/ui/dropdown-menu/DropdownMenuRad
 import ShareExtractIcon from '@/components/icons/ShareExtractIcon.vue'
 import { useFileStore } from '../stores/file'
 import { useUserStore } from '../stores/user'
-import { uploadFile, quickCheck, prepareInstantUpload, verifyInstantUploadProof, instantUpload, initChunkUpload, signPartUpload, reportUploadedPart, uploadChunkDirect, completeChunkUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
+import { uploadFile, quickCheck, prepareInstantUpload, instantUpload, initChunkUpload, signPartUpload, reportUploadedPart, uploadChunkDirect, completeChunkUpload, createFolder, deleteFile, batchDeleteFiles, permanentDeleteFile, downloadFile } from '../api/file'
 import { createShare, downloadShare } from '../api/share'
 import { calculateFileSHA256, calculateFileSampleSHA256, calculateChunkIdentity, readFileSegmentBase64, CHUNK_IDENTITY_SIZE } from '../lib/sha256'
 
@@ -517,12 +517,6 @@ const filePondServer = {
             })))
             if (finalized) return
 
-            const verifyRes = await verifyInstantUploadProof({
-              prepare_id: prepareData?.prepare_id,
-              proofs,
-            })
-            if (finalized) return
-
             instantRes = await instantUpload({
               hash_type: HASH_TYPE,
               file_hash: fileHash,
@@ -530,7 +524,7 @@ const filePondServer = {
               file_size: file.size,
               parent_id: fileStore.currentParentId,
               prepare_id: prepareData?.prepare_id,
-              proof_token: verifyRes?.data?.proof_token,
+              proofs,
             })
           } catch (err) {
             if (err?.code !== CODE_INSTANT_UNAVAILABLE) throw err
