@@ -30,6 +30,8 @@ const (
 	CodeChunkHashConflict     = 3009
 	CodeInstantProofRequired  = 3010
 	CodeInstantProofInvalid   = 3011
+	CodeInstantPrepareInvalid = 3012
+	CodeInstantProofMismatch  = 3013
 
 	CodeShareNotFound   = 4001
 	CodeShareExpired    = 4002

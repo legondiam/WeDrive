@@ -38,7 +38,9 @@ var ErrUploadMethodInvalid = errors.New("上传方式不符合文件大小规则
 var ErrChunkAlreadyUploaded = errors.New("分块已上传完成")
 var ErrChunkHashConflict = errors.New("分块哈希与历史记录冲突")
 var ErrInstantProofRequired = errors.New("秒传需要所有权证明")
+var ErrInstantPrepareInvalid = errors.New("秒传挑战无效或已过期")
 var ErrInstantProofInvalid = errors.New("秒传所有权证明无效")
+var ErrInstantProofMismatch = errors.New("秒传挑战回答不匹配")
 
 const (
 	uploadSessionStatusPending   = "pending"
@@ -48,7 +50,6 @@ const (
 	uploadStateExpire            = 24 * time.Hour
 	partUploadURLExpire          = 15 * time.Minute
 	instantPrepareExpire         = 5 * time.Minute
-	instantProofTokenExpire      = 2 * time.Minute
 	instantProofChallengeCount   = 3
 	instantProofSegmentSize      = 4 << 10
 )
@@ -156,14 +157,9 @@ type InstantUploadProof struct {
 	ContentBase64 string
 }
 
-type VerifyInstantUploadProofReq struct {
+type instantUploadProofVerifyReq struct {
 	PrepareID string
 	Proofs    []InstantUploadProof
-}
-
-type VerifyInstantUploadProofResp struct {
-	ProofToken   string `json:"proof_token"`
-	ExpiresInSec int    `json:"expires_in_sec"`
 }
 
 type instantPrepareState struct {
@@ -174,15 +170,6 @@ type instantPrepareState struct {
 	FileHash    string                   `json:"file_hash"`
 	HashType    string                   `json:"hash_type"`
 	Challenges  []InstantUploadChallenge `json:"challenges"`
-}
-
-type instantProofTokenState struct {
-	UserID      uint   `json:"user_id"`
-	FileStoreID uint   `json:"file_store_id"`
-	ParentID    uint   `json:"parent_id"`
-	FileName    string `json:"file_name"`
-	FileHash    string `json:"file_hash"`
-	HashType    string `json:"hash_type"`
 }
 
 func NewFileService(fileRepo *repository.FileRepo, uploadCache *repository.UploadCacheRepo, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
@@ -231,13 +218,13 @@ func generateRandomToken() (string, error) {
 // randomChallengeRanges 随机挑选待验证的文件片段
 func randomChallengeRanges(fileSize int64, count int, segmentSize int64) ([]InstantUploadChallenge, error) {
 	if fileSize < 0 || count <= 0 || segmentSize < 0 {
-		return nil, ErrInstantProofInvalid
+		return nil, ErrUploadRequestInvalid
 	}
 	if fileSize == 0 {
 		return []InstantUploadChallenge{{Offset: 0, Length: 0}}, nil
 	}
 	if segmentSize <= 0 {
-		return nil, ErrInstantProofInvalid
+		return nil, ErrUploadRequestInvalid
 	}
 
 	length := segmentSize
@@ -746,34 +733,37 @@ func (s *FileService) PrepareInstantUpload(ctx context.Context, userID uint, req
 	}, nil
 }
 
-// VerifyInstantUploadProof 校验随机片段挑战并签发一次性凭证
-func (s *FileService) VerifyInstantUploadProof(ctx context.Context, userID uint, req VerifyInstantUploadProofReq) (VerifyInstantUploadProofResp, error) {
+// verifyInstantUploadProof 校验随机片段挑战，并返回该准备态参数
+func (s *FileService) verifyInstantUploadProof(ctx context.Context, userID uint, req instantUploadProofVerifyReq) (instantPrepareState, uint, error) {
 	if strings.TrimSpace(req.PrepareID) == "" {
-		return VerifyInstantUploadProofResp{}, ErrUploadRequestInvalid
+		return instantPrepareState{}, 0, ErrUploadRequestInvalid
 	}
 
 	var state instantPrepareState
 	found, err := s.uploadCache.GetInstantPrepare(ctx, req.PrepareID, &state)
 	if err != nil {
-		return VerifyInstantUploadProofResp{}, errors.WithMessage(err, "读取秒传挑战失败")
+		return instantPrepareState{}, 0, errors.WithMessage(err, "读取秒传挑战失败")
 	}
-	if !found || state.UserID != userID {
-		return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+	if !found {
+		return instantPrepareState{}, 0, ErrInstantPrepareInvalid
 	}
-
+	if state.UserID != userID {
+		return instantPrepareState{}, 0, ErrInstantPrepareInvalid
+	}
+	//查找秒传文件
 	fileStore, err := s.fileRepo.GetFileByIdentity(ctx, state.HashType, state.FileHash)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return VerifyInstantUploadProofResp{}, ErrInstantUploadUnavailable
+			return instantPrepareState{}, 0, ErrInstantUploadUnavailable
 		}
-		return VerifyInstantUploadProofResp{}, errors.WithMessage(err, "查询文件失败")
+		return instantPrepareState{}, 0, errors.WithMessage(err, "查询文件失败")
 	}
 	if fileStore.ID != state.FileStoreID {
-		return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+		return instantPrepareState{}, 0, ErrInstantUploadUnavailable
 	}
 	//验证挑战长度和回答的长度一致
 	if len(req.Proofs) != len(state.Challenges) {
-		return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+		return instantPrepareState{}, 0, ErrInstantProofMismatch
 	}
 	//把challenge转换成map
 	expected := make(map[string]InstantUploadChallenge, len(state.Challenges))
@@ -786,107 +776,85 @@ func (s *FileService) VerifyInstantUploadProof(ctx context.Context, userID uint,
 		key := fmt.Sprintf("%d:%d", proof.Offset, proof.Length)
 		challenge, ok := expected[key]
 		if !ok {
-			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+			return instantPrepareState{}, 0, ErrInstantProofMismatch
 		}
 		//把base64解码成原始字节
 		segment, decodeErr := base64.StdEncoding.DecodeString(strings.TrimSpace(proof.ContentBase64))
 		if decodeErr != nil {
-			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+			return instantPrepareState{}, 0, ErrUploadRequestInvalid
 		}
 		//长度检查
 		if int64(len(segment)) != challenge.Length {
-			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+			return instantPrepareState{}, 0, ErrInstantProofMismatch
 		}
 		//从oss读取对应片段
 		expectedSegment := []byte{}
 		if challenge.Length > 0 {
 			expectedSegment, err = s.storage.ReadFileRange(ctx, fileStore.FileAddr, challenge.Offset, challenge.Length)
 			if err != nil {
-				return VerifyInstantUploadProofResp{}, errors.WithMessage(err, "读取挑战片段失败")
+				return instantPrepareState{}, 0, errors.WithMessage(err, "读取挑战片段失败")
 			}
 		}
 		//字节对比
 		if !bytes.Equal(segment, expectedSegment) {
-			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+			return instantPrepareState{}, 0, ErrInstantProofMismatch
 		}
 		//从expected中删除已通过的挑战
 		delete(expected, key)
 	}
 	if len(expected) != 0 {
-		return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+		return instantPrepareState{}, 0, ErrInstantProofMismatch
 	}
-	//生成秒传凭证
-	proofToken, err := generateRandomToken()
-	if err != nil {
-		return VerifyInstantUploadProofResp{}, errors.WithMessage(err, "生成秒传凭证失败")
-	}
-	tokenState := instantProofTokenState{
-		UserID:      userID,
-		FileStoreID: fileStore.ID,
-		ParentID:    state.ParentID,
-		FileName:    state.FileName,
-		FileHash:    state.FileHash,
-		HashType:    state.HashType,
-	}
-
-	if err := s.uploadCache.SetInstantProofToken(ctx, proofToken, tokenState, instantProofTokenExpire); err != nil {
-		return VerifyInstantUploadProofResp{}, errors.WithMessage(err, "保存秒传凭证失败")
-	}
-	_ = s.uploadCache.DeleteInstantPrepare(ctx, req.PrepareID)
-	return VerifyInstantUploadProofResp{
-		ProofToken:   proofToken,
-		ExpiresInSec: int(instantProofTokenExpire / time.Second),
-	}, nil
+	return state, fileStore.ID, nil
 }
 
-// InstantUpload 命中秒传后的确认落库
-func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID uint, hashType string, fileName string, fileHash string, fileSize int64, prepareID string, proofToken string) (uint, error) {
+// InstantUpload 命中秒传
+func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID uint, hashType string, fileName string, fileHash string, fileSize int64, prepareID string, proofs []InstantUploadProof) (uint, error) {
 	if err := validateHashType(hashType); err != nil {
 		return 0, err
 	}
 	if err := s.checkParentFolder(ctx, userID, parentID); err != nil {
 		return 0, errors.WithMessage(err, "父文件夹不合法")
 	}
-	if strings.TrimSpace(prepareID) == "" || strings.TrimSpace(proofToken) == "" {
+	if strings.TrimSpace(prepareID) == "" {
 		return 0, ErrInstantProofRequired
 	}
-
-	var tokenState instantProofTokenState
-	found, err := s.uploadCache.GetInstantProofToken(ctx, proofToken, &tokenState)
+	//校验客户端返回的随机片段证明
+	prepareState, fileStoreID, err := s.verifyInstantUploadProof(ctx, userID, instantUploadProofVerifyReq{
+		PrepareID: prepareID,
+		Proofs:    proofs,
+	})
 	if err != nil {
-		return 0, errors.WithMessage(err, "读取秒传凭证失败")
+		return 0, err
 	}
-	if !found {
-		return 0, ErrInstantProofInvalid
+	//检查本次秒传请求和准备阶段保存的文件信息一致
+	if prepareState.ParentID != parentID || prepareState.HashType != hashType || prepareState.FileHash != fileHash {
+		return 0, ErrInstantPrepareInvalid
 	}
-
-	var prepareState instantPrepareState
-	prepareFound, err := s.uploadCache.GetInstantPrepare(ctx, prepareID, &prepareState)
-	if err != nil {
-		return 0, errors.WithMessage(err, "读取秒传挑战失败")
-	}
-	if prepareFound {
-		return 0, ErrInstantProofInvalid
-	}
-	if tokenState.UserID != userID || tokenState.ParentID != parentID || tokenState.HashType != hashType || tokenState.FileHash != fileHash {
-		return 0, ErrInstantProofInvalid
+	//消费秒传挑战
+	if err := s.uploadCache.DeleteInstantPrepare(ctx, prepareID); err != nil {
+		return 0, errors.WithMessage(err, "消费秒传挑战失败")
 	}
 
 	var uploadedID uint
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		fileStore, loadErr := s.fileRepo.GetFileStoreByIDForUpdate(ctx, tokenState.FileStoreID, tx)
+		//加锁读取文件存储记录，避免并发修改影响秒传
+		fileStore, loadErr := s.fileRepo.GetFileStoreByIDForUpdate(ctx, fileStoreID, tx)
 		if loadErr != nil {
 			if errors.Is(loadErr, gorm.ErrRecordNotFound) {
 				return ErrInstantUploadUnavailable
 			}
 			return errors.WithMessage(loadErr, "文件查询异常")
 		}
+		//确认库中文件身份没有变化
 		if fileStore.HashType != hashType || fileStore.FileHash != fileHash {
-			return ErrInstantProofInvalid
+			return ErrInstantUploadUnavailable
 		}
+		//检查客户端声明的文件大小和已存储文件一致
 		if fileSize > 0 && fileStore.FileSize != fileSize {
 			return ErrInstantUploadUnavailable
 		}
+		//检查用户空间
 		user, userErr := s.userRepo.GetUserInfo(ctx, userID)
 		if userErr != nil {
 			return errors.WithMessage(userErr, "获取用户信息失败")
@@ -894,6 +862,7 @@ func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID u
 		if user.UsedSpace+fileStore.FileSize > user.TotalSpace {
 			return ErrUserSpaceNotEnough
 		}
+		//创建用户文件记录，真正完成秒传
 		uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, parentID, fileName, fileStore.FileSize, fileStore)
 		return errors.WithMessage(err, "秒传文件存储失败")
 	})
@@ -901,7 +870,6 @@ func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID u
 		return 0, errors.WithMessage(err, "秒传失败")
 	}
 
-	_ = s.uploadCache.DeleteInstantProofToken(ctx, proofToken)
 	logger.S.Infof("前端秒传确认成功, hashType: %s, fileHash: %s, userID: %d, parentID: %d", hashType, fileHash, userID, parentID)
 	return uploadedID, nil
 }

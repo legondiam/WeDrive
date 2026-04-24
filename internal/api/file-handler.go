@@ -19,13 +19,17 @@ func NewFileHandler(fileService *service.FileService) *FileHandler {
 }
 
 type instantUploadReq struct {
-	HashType   string `json:"hash_type" binding:"required"`
-	FileHash   string `json:"file_hash" binding:"required"`
-	FileName   string `json:"file_name" binding:"required"`
-	FileSize   int64  `json:"file_size"`
-	ParentID   uint   `json:"parent_id"`
-	PrepareID  string `json:"prepare_id" binding:"required"`
-	ProofToken string `json:"proof_token" binding:"required"`
+	HashType  string `json:"hash_type" binding:"required"`
+	FileHash  string `json:"file_hash" binding:"required"`
+	FileName  string `json:"file_name" binding:"required"`
+	FileSize  int64  `json:"file_size"`
+	ParentID  uint   `json:"parent_id"`
+	PrepareID string `json:"prepare_id" binding:"required"`
+	Proofs    []struct {
+		Offset        int64  `json:"offset"`
+		Length        int64  `json:"length"`
+		ContentBase64 string `json:"content_base64"`
+	} `json:"proofs" binding:"required"`
 }
 
 type prepareInstantUploadReq struct {
@@ -34,15 +38,6 @@ type prepareInstantUploadReq struct {
 	FileName string `json:"file_name" binding:"required"`
 	FileSize int64  `json:"file_size"`
 	ParentID uint   `json:"parent_id"`
-}
-
-type verifyInstantUploadProofReq struct {
-	PrepareID string `json:"prepare_id" binding:"required"`
-	Proofs    []struct {
-		Offset        int64  `json:"offset" binding:"required"`
-		Length        int64  `json:"length" binding:"required"`
-		ContentBase64 string `json:"content_base64"`
-	} `json:"proofs" binding:"required"`
 }
 
 type quickCheckReq struct {
@@ -171,33 +166,6 @@ func (h *FileHandler) PrepareInstantUpload(c *gin.Context) {
 	response.Success(c, resp)
 }
 
-// VerifyInstantUploadProof 校验秒传所有权证明
-func (h *FileHandler) VerifyInstantUploadProof(c *gin.Context) {
-	var req verifyInstantUploadProofReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
-		return
-	}
-	proofs := make([]service.InstantUploadProof, 0, len(req.Proofs))
-	for _, item := range req.Proofs {
-		proofs = append(proofs, service.InstantUploadProof{
-			Offset:        item.Offset,
-			Length:        item.Length,
-			ContentBase64: item.ContentBase64,
-		})
-	}
-	userID, _ := c.Get("userID")
-	resp, err := h.fileService.VerifyInstantUploadProof(c.Request.Context(), userID.(uint), service.VerifyInstantUploadProofReq{
-		PrepareID: req.PrepareID,
-		Proofs:    proofs,
-	})
-	if err != nil {
-		h.handleInstantUploadError(c, err)
-		return
-	}
-	response.Success(c, resp)
-}
-
 // InstantUpload 秒传
 func (h *FileHandler) InstantUpload(c *gin.Context) {
 	var req instantUploadReq
@@ -206,7 +174,15 @@ func (h *FileHandler) InstantUpload(c *gin.Context) {
 		return
 	}
 	userID, _ := c.Get("userID")
-	uploadedID, err := h.fileService.InstantUpload(c.Request.Context(), userID.(uint), req.ParentID, req.HashType, req.FileName, req.FileHash, req.FileSize, req.PrepareID, req.ProofToken)
+	proofs := make([]service.InstantUploadProof, 0, len(req.Proofs))
+	for _, item := range req.Proofs {
+		proofs = append(proofs, service.InstantUploadProof{
+			Offset:        item.Offset,
+			Length:        item.Length,
+			ContentBase64: item.ContentBase64,
+		})
+	}
+	uploadedID, err := h.fileService.InstantUpload(c.Request.Context(), userID.(uint), req.ParentID, req.HashType, req.FileName, req.FileHash, req.FileSize, req.PrepareID, proofs)
 	if err != nil {
 		h.handleInstantUploadError(c, err)
 		return
@@ -551,15 +527,23 @@ func (h *FileHandler) handleInstantUploadError(c *gin.Context, err error) {
 		return
 	}
 	if errors.Is(err, service.ErrInstantUploadUnavailable) {
-		response.BusinessError(c, response.CodeInstantUnavailable, "不允许秒传")
+		response.BusinessError(c, response.CodeInstantUnavailable, "文件未命中或秒传条件已失效")
 		return
 	}
 	if errors.Is(err, service.ErrInstantProofRequired) {
 		response.BusinessError(c, response.CodeInstantProofRequired, "需要先完成所有权证明")
 		return
 	}
+	if errors.Is(err, service.ErrInstantPrepareInvalid) {
+		response.BusinessError(c, response.CodeInstantPrepareInvalid, "秒传挑战无效或已过期")
+		return
+	}
+	if errors.Is(err, service.ErrInstantProofMismatch) {
+		response.BusinessError(c, response.CodeInstantProofMismatch, "秒传挑战回答不匹配")
+		return
+	}
 	if errors.Is(err, service.ErrInstantProofInvalid) {
-		response.BusinessError(c, response.CodeInstantProofInvalid, "所有权证明无效或已过期")
+		response.BusinessError(c, response.CodeInstantProofInvalid, "所有权证明无效")
 		return
 	}
 	if errors.Is(err, service.ErrUploadRequestInvalid) {
