@@ -7,6 +7,7 @@ import (
 	"WeDrive/pkg/logger"
 	"WeDrive/pkg/utils/convert"
 	"WeDrive/pkg/utils/hash"
+	"bytes"
 	"context"
 	cryptorand "crypto/rand"
 	"encoding/base64"
@@ -43,13 +44,13 @@ const (
 	uploadSessionStatusPending   = "pending"
 	uploadSessionStatusCompleted = "completed"
 	hashTypeFullSHA256           = "full_sha256_v1"
-	merkleTypeChunkSHA256V1      = "merkle_sha256_5mb_v1"
 	chunkUploadThreshold         = 16 << 20
 	uploadStateExpire            = 24 * time.Hour
 	partUploadURLExpire          = 15 * time.Minute
 	instantPrepareExpire         = 5 * time.Minute
 	instantProofTokenExpire      = 2 * time.Minute
-	instantProofChallengeCount   = 2
+	instantProofChallengeCount   = 3
+	instantProofSegmentSize      = 4 << 10
 )
 
 type FileService struct {
@@ -130,38 +131,34 @@ type ReportUploadedPartReq struct {
 }
 
 type PrepareInstantUploadReq struct {
-	HashType   string
-	FileHash   string
-	FileName   string
-	FileSize   int64
-	ParentID   uint
-	MerkleType string
-	MerkleRoot string
+	HashType string
+	FileHash string
+	FileName string
+	FileSize int64
+	ParentID uint
 }
 
-type MerkleChallenge struct {
-	PartNumber int `json:"part_number"`
+type InstantUploadChallenge struct {
+	Offset int64 `json:"offset"`
+	Length int64 `json:"length"`
 }
 
 type PrepareInstantUploadResp struct {
-	PrepareID     string            `json:"prepare_id"`
-	ProofRequired bool              `json:"proof_required"`
-	MerkleType    string            `json:"merkle_type"`
-	Challenges    []MerkleChallenge `json:"challenges"`
-	Nonce         string            `json:"nonce"`
-	ExpiresInSec  int               `json:"expires_in_sec"`
+	PrepareID     string                   `json:"prepare_id"`
+	ProofRequired bool                     `json:"proof_required"`
+	Challenges    []InstantUploadChallenge `json:"challenges"`
+	ExpiresInSec  int                      `json:"expires_in_sec"`
 }
 
-type MerkleProofItem struct {
-	PartNumber    int
-	LeafHash      string
-	ChallengeHash string
-	Proof         []hash.MerkleProofNode
+type InstantUploadProof struct {
+	Offset        int64
+	Length        int64
+	ContentBase64 string
 }
 
 type VerifyInstantUploadProofReq struct {
 	PrepareID string
-	Proofs    []MerkleProofItem
+	Proofs    []InstantUploadProof
 }
 
 type VerifyInstantUploadProofResp struct {
@@ -170,16 +167,13 @@ type VerifyInstantUploadProofResp struct {
 }
 
 type instantPrepareState struct {
-	UserID        uint   `json:"user_id"`
-	FileStoreID   uint   `json:"file_store_id"`
-	ParentID      uint   `json:"parent_id"`
-	FileName      string `json:"file_name"`
-	FileHash      string `json:"file_hash"`
-	HashType      string `json:"hash_type"`
-	MerkleType    string `json:"merkle_type"`
-	MerkleRoot    string `json:"merkle_root"`
-	Nonce         string `json:"nonce"`
-	ChallengePart []int  `json:"challenge_part"`
+	UserID      uint                     `json:"user_id"`
+	FileStoreID uint                     `json:"file_store_id"`
+	ParentID    uint                     `json:"parent_id"`
+	FileName    string                   `json:"file_name"`
+	FileHash    string                   `json:"file_hash"`
+	HashType    string                   `json:"hash_type"`
+	Challenges  []InstantUploadChallenge `json:"challenges"`
 }
 
 type instantProofTokenState struct {
@@ -229,103 +223,54 @@ func isMultipartUploadNotFound(err error) bool {
 	return resp.Code == minio.NoSuchUpload
 }
 
-// collectPartHashes 收集分块哈希
-func collectPartHashes(parts []repository.UploadPartState, chunkCount int) ([]hash.ChunkHash, error) {
-	if len(parts) != chunkCount {
-		return nil, ErrChunkUploadIncomplete
-	}
-	chunkHashes := make([]hash.ChunkHash, 0, len(parts))
-	for index, part := range parts {
-		expected := index + 1
-		if part.PartNumber != expected || part.Value == "" {
-			return nil, ErrChunkUploadIncomplete
-		}
-		chunkHashes = append(chunkHashes, hash.ChunkHash{
-			PartNumber: part.PartNumber,
-			Hash:       part.Value,
-		})
-	}
-	return chunkHashes, nil
-}
-
-// buildMerkleMetaFromChunkHashes 计算默克尔树root和叶子数
-func buildMerkleMetaFromChunkHashes(parts []hash.ChunkHash) (string, int, error) {
-	root, leafCount, err := hash.MerkleRootFromChunkHashes(parts)
-	if err != nil {
-		return "", 0, errors.WithMessage(err, "计算Root失败")
-	}
-	return root, leafCount, nil
-}
-
-// buildMerkleMetaFromFileHeader 计算文件的默克尔树
-func (s *FileService) buildMerkleMetaFromFileHeader(fileHeader *multipart.FileHeader) (string, int, error) {
-	chunkHashes, err := hash.ChunkHashesFromFileHeader(fileHeader, hash.ChunkIdentitySize)
-	if err != nil {
-		return "", 0, errors.WithMessage(err, "计算分块哈希失败")
-	}
-	return buildMerkleMetaFromChunkHashes(chunkHashes)
-}
-
-// ensureMerkleMetadata 保存Merkle元数据
-func (s *FileService) ensureMerkleMetadata(ctx context.Context, tx *gorm.DB, fileStore *model.FileStore, merkleRoot string, leafCount int) error {
-	if fileStore == nil || merkleRoot == "" || leafCount <= 0 {
-		return nil
-	}
-	if fileStore.MerkleRoot == merkleRoot && fileStore.MerkleType == merkleTypeChunkSHA256V1 && fileStore.MerkleChunkSize == hash.ChunkIdentitySize && fileStore.MerkleLeafCount == leafCount {
-		return nil
-	}
-	fileStore.MerkleType = merkleTypeChunkSHA256V1
-	fileStore.MerkleRoot = merkleRoot
-	fileStore.MerkleChunkSize = hash.ChunkIdentitySize
-	fileStore.MerkleLeafCount = leafCount
-	if err := s.fileRepo.SaveFileStore(ctx, fileStore, tx); err != nil {
-		return errors.WithMessage(err, "保存Merkle元数据失败")
-	}
-	return nil
-}
-
+// generateRandomToken 生成一次性随机令牌
 func generateRandomToken() (string, error) {
 	return uuid.NewString(), nil
 }
 
-// randomPartNumbers 随机挑选分块编号
-func randomPartNumbers(total int, count int) ([]int, error) {
-	if total <= 0 {
+// randomChallengeRanges 随机挑选待验证的文件片段
+func randomChallengeRanges(fileSize int64, count int, segmentSize int64) ([]InstantUploadChallenge, error) {
+	if fileSize < 0 || count <= 0 || segmentSize < 0 {
 		return nil, ErrInstantProofInvalid
 	}
-	if count > total {
-		count = total
+	if fileSize == 0 {
+		return []InstantUploadChallenge{{Offset: 0, Length: 0}}, nil
 	}
-	selected := make(map[int]struct{}, count)
-	results := make([]int, 0, count)
+	if segmentSize <= 0 {
+		return nil, ErrInstantProofInvalid
+	}
+
+	length := segmentSize
+	if length > fileSize {
+		length = fileSize
+	}
+	maxOffset := fileSize - length
+	maxUnique := maxOffset + 1
+	if int64(count) > maxUnique {
+		count = int(maxUnique)
+	}
+
+	selected := make(map[int64]struct{}, count)
+	results := make([]InstantUploadChallenge, 0, count)
 	for len(results) < count {
-		n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(int64(total)))
-		if err != nil {
-			return nil, errors.WithStack(err)
+		var offset int64
+		if maxOffset > 0 {
+			n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(maxOffset+1))
+			if err != nil {
+				return nil, errors.WithStack(err)
+			}
+			offset = n.Int64()
 		}
-		partNumber := int(n.Int64()) + 1
-		if _, ok := selected[partNumber]; ok {
+		if _, ok := selected[offset]; ok {
 			continue
 		}
-		selected[partNumber] = struct{}{}
-		results = append(results, partNumber)
+		selected[offset] = struct{}{}
+		results = append(results, InstantUploadChallenge{
+			Offset: offset,
+			Length: length,
+		})
 	}
 	return results, nil
-}
-
-func objectRangeForPart(fileSize int64, chunkSize int64, partNumber int) (int64, int64, error) {
-	if fileSize <= 0 || chunkSize <= 0 || partNumber <= 0 {
-		return 0, 0, ErrInstantProofInvalid
-	}
-	offset := int64(partNumber-1) * chunkSize
-	if offset >= fileSize {
-		return 0, 0, ErrInstantProofInvalid
-	}
-	length := chunkSize
-	if offset+length > fileSize {
-		length = fileSize - offset
-	}
-	return offset, length, nil
 }
 
 // checkParentFolder 检查父文件夹是否合法
@@ -612,18 +557,6 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	if len(partEtags) != session.ChunkCount {
 		return 0, ErrChunkUploadIncomplete
 	}
-	partHashes, err := s.uploadCache.ListPartHashes(ctx, session.ID)
-	if err != nil {
-		return 0, errors.WithMessage(err, "读取分块哈希失败")
-	}
-	chunkHashes, err := collectPartHashes(partHashes, session.ChunkCount)
-	if err != nil {
-		return 0, err
-	}
-	merkleRoot, merkleLeafCount, err := buildMerkleMetaFromChunkHashes(chunkHashes)
-	if err != nil {
-		return 0, err
-	}
 	//组装分块合并请求参数
 	completeParts := make([]oss.CompletePart, 0, len(partEtags))
 	for index, part := range partEtags {
@@ -665,9 +598,6 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 		fileStore, findErr := s.fileRepo.GetFileByIdentityForUpdate(ctx, session.HashType, session.FileHash, tx)
 		switch {
 		case findErr == nil:
-			if err := s.ensureMerkleMetadata(ctx, tx, fileStore, merkleRoot, merkleLeafCount); err != nil {
-				return err
-			}
 			//去重命中，创建秒传记录
 			uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, session.ParentID, session.FileName, fileStore.FileSize, fileStore)
 			if err != nil {
@@ -676,18 +606,14 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 		case errors.Is(findErr, gorm.ErrRecordNotFound):
 			//去重未命中，创建文件元数据
 			newFileStore := &model.FileStore{
-				HashType:        session.HashType,
-				FileHash:        session.FileHash,
-				FileName:        session.FileName,
-				FileSize:        session.FileSize,
-				FileAddr:        session.ObjectName,
-				HeadHash:        session.HeadHash,
-				MidHash:         session.MidHash,
-				TailHash:        session.TailHash,
-				MerkleType:      merkleTypeChunkSHA256V1,
-				MerkleRoot:      merkleRoot,
-				MerkleChunkSize: hash.ChunkIdentitySize,
-				MerkleLeafCount: merkleLeafCount,
+				HashType: session.HashType,
+				FileHash: session.FileHash,
+				FileName: session.FileName,
+				FileSize: session.FileSize,
+				FileAddr: session.ObjectName,
+				HeadHash: session.HeadHash,
+				MidHash:  session.MidHash,
+				TailHash: session.TailHash,
 			}
 			if createErr := s.fileRepo.CreateFileStore(ctx, newFileStore, tx); createErr != nil {
 				if !isDuplicateKeyError(createErr) {
@@ -697,9 +623,6 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 				fileStore, createErr = s.fileRepo.GetFileByIdentityForUpdate(ctx, session.HashType, session.FileHash, tx)
 				if createErr != nil {
 					return errors.WithMessage(createErr, "查询并发写入的文件失败")
-				}
-				if err := s.ensureMerkleMetadata(ctx, tx, fileStore, merkleRoot, merkleLeafCount); err != nil {
-					return err
 				}
 				uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, session.ParentID, session.FileName, fileStore.FileSize, fileStore)
 				if err != nil {
@@ -763,7 +686,7 @@ func (s *FileService) QuickCheck(ctx context.Context, userID uint, req QuickChec
 	return exists, nil
 }
 
-// PrepareInstantUpload 为秒传准备默克尔树所有权挑战
+// PrepareInstantUpload 为秒传准备随机片段挑战
 func (s *FileService) PrepareInstantUpload(ctx context.Context, userID uint, req PrepareInstantUploadReq) (PrepareInstantUploadResp, error) {
 	if err := validateHashType(req.HashType); err != nil {
 		return PrepareInstantUploadResp{}, err
@@ -771,9 +694,10 @@ func (s *FileService) PrepareInstantUpload(ctx context.Context, userID uint, req
 	if err := s.checkParentFolder(ctx, userID, req.ParentID); err != nil {
 		return PrepareInstantUploadResp{}, errors.WithMessage(err, "父文件夹不合法")
 	}
-	if strings.TrimSpace(req.FileHash) == "" || strings.TrimSpace(req.FileName) == "" || strings.TrimSpace(req.MerkleRoot) == "" || strings.TrimSpace(req.MerkleType) == "" {
+	if strings.TrimSpace(req.FileHash) == "" || strings.TrimSpace(req.FileName) == "" {
 		return PrepareInstantUploadResp{}, ErrUploadRequestInvalid
 	}
+
 	user, err := s.userRepo.GetUserInfo(ctx, userID)
 	if err != nil {
 		return PrepareInstantUploadResp{}, errors.WithMessage(err, "获取用户信息失败")
@@ -788,17 +712,12 @@ func (s *FileService) PrepareInstantUpload(ctx context.Context, userID uint, req
 	if req.FileSize > 0 && fileStore.FileSize != req.FileSize {
 		return PrepareInstantUploadResp{}, ErrInstantUploadUnavailable
 	}
-	if fileStore.MerkleRoot == "" || fileStore.MerkleType == "" || fileStore.MerkleChunkSize <= 0 || fileStore.MerkleLeafCount <= 0 {
-		return PrepareInstantUploadResp{}, ErrInstantUploadUnavailable
-	}
-	if fileStore.MerkleType != req.MerkleType || fileStore.MerkleRoot != req.MerkleRoot {
-		return PrepareInstantUploadResp{}, ErrInstantUploadUnavailable
-	}
 	if user.UsedSpace+fileStore.FileSize > user.TotalSpace {
 		return PrepareInstantUploadResp{}, ErrUserSpaceNotEnough
 	}
 
-	challengeParts, err := randomPartNumbers(fileStore.MerkleLeafCount, instantProofChallengeCount)
+	//发起随机挑战
+	challenges, err := randomChallengeRanges(fileStore.FileSize, instantProofChallengeCount, instantProofSegmentSize)
 	if err != nil {
 		return PrepareInstantUploadResp{}, errors.WithMessage(err, "生成秒传挑战失败")
 	}
@@ -806,44 +725,33 @@ func (s *FileService) PrepareInstantUpload(ctx context.Context, userID uint, req
 	if err != nil {
 		return PrepareInstantUploadResp{}, errors.WithMessage(err, "生成秒传挑战失败")
 	}
-	nonce, err := generateRandomToken()
-	if err != nil {
-		return PrepareInstantUploadResp{}, errors.WithMessage(err, "生成秒传挑战失败")
-	}
 	state := instantPrepareState{
-		UserID:        userID,
-		FileStoreID:   fileStore.ID,
-		ParentID:      req.ParentID,
-		FileName:      req.FileName,
-		FileHash:      req.FileHash,
-		HashType:      req.HashType,
-		MerkleType:    fileStore.MerkleType,
-		MerkleRoot:    fileStore.MerkleRoot,
-		Nonce:         nonce,
-		ChallengePart: challengeParts,
+		UserID:      userID,
+		FileStoreID: fileStore.ID,
+		ParentID:    req.ParentID,
+		FileName:    req.FileName,
+		FileHash:    req.FileHash,
+		HashType:    req.HashType,
+		Challenges:  challenges,
 	}
+	//保存秒传准备
 	if err := s.uploadCache.SetInstantPrepare(ctx, prepareID, state, instantPrepareExpire); err != nil {
 		return PrepareInstantUploadResp{}, errors.WithMessage(err, "保存秒传挑战失败")
 	}
-	resp := PrepareInstantUploadResp{
+	return PrepareInstantUploadResp{
 		PrepareID:     prepareID,
 		ProofRequired: true,
-		MerkleType:    fileStore.MerkleType,
-		Nonce:         nonce,
+		Challenges:    challenges,
 		ExpiresInSec:  int(instantPrepareExpire / time.Second),
-		Challenges:    make([]MerkleChallenge, 0, len(challengeParts)),
-	}
-	for _, partNumber := range challengeParts {
-		resp.Challenges = append(resp.Challenges, MerkleChallenge{PartNumber: partNumber})
-	}
-	return resp, nil
+	}, nil
 }
 
-// VerifyInstantUploadProof 校验挑战分块的默克尔证明并签发一次性凭证
+// VerifyInstantUploadProof 校验随机片段挑战并签发一次性凭证
 func (s *FileService) VerifyInstantUploadProof(ctx context.Context, userID uint, req VerifyInstantUploadProofReq) (VerifyInstantUploadProofResp, error) {
-	if strings.TrimSpace(req.PrepareID) == "" || len(req.Proofs) == 0 {
+	if strings.TrimSpace(req.PrepareID) == "" {
 		return VerifyInstantUploadProofResp{}, ErrUploadRequestInvalid
 	}
+
 	var state instantPrepareState
 	found, err := s.uploadCache.GetInstantPrepare(ctx, req.PrepareID, &state)
 	if err != nil {
@@ -852,6 +760,7 @@ func (s *FileService) VerifyInstantUploadProof(ctx context.Context, userID uint,
 	if !found || state.UserID != userID {
 		return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
 	}
+
 	fileStore, err := s.fileRepo.GetFileByIdentity(ctx, state.HashType, state.FileHash)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -859,49 +768,54 @@ func (s *FileService) VerifyInstantUploadProof(ctx context.Context, userID uint,
 		}
 		return VerifyInstantUploadProofResp{}, errors.WithMessage(err, "查询文件失败")
 	}
-	if fileStore.ID != state.FileStoreID || fileStore.MerkleRoot != state.MerkleRoot || fileStore.MerkleType != state.MerkleType {
+	if fileStore.ID != state.FileStoreID {
 		return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
 	}
-	if len(req.Proofs) != len(state.ChallengePart) {
+	//验证挑战长度和回答的长度一致
+	if len(req.Proofs) != len(state.Challenges) {
 		return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
 	}
-	expectedParts := make(map[int]struct{}, len(state.ChallengePart))
-	for _, partNumber := range state.ChallengePart {
-		expectedParts[partNumber] = struct{}{}
+	//把challenge转换成map
+	expected := make(map[string]InstantUploadChallenge, len(state.Challenges))
+	for _, challenge := range state.Challenges {
+		key := fmt.Sprintf("%d:%d", challenge.Offset, challenge.Length)
+		expected[key] = challenge
 	}
 	for _, proof := range req.Proofs {
-		if _, ok := expectedParts[proof.PartNumber]; !ok {
-			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
-		}
-		offset, length, rangeErr := objectRangeForPart(fileStore.FileSize, fileStore.MerkleChunkSize, proof.PartNumber)
-		if rangeErr != nil {
-			return VerifyInstantUploadProofResp{}, rangeErr
-		}
-		chunkBytes, readErr := s.storage.ReadFileRange(ctx, fileStore.FileAddr, offset, length)
-		if readErr != nil {
-			return VerifyInstantUploadProofResp{}, errors.WithMessage(readErr, "读取挑战分块失败")
-		}
-		expectedLeafHash := hash.HashBytesHex(chunkBytes)
-		if proof.LeafHash != expectedLeafHash {
-			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
-		}
-		expectedChallengeHash := hash.ChallengeChunkHash(state.Nonce, chunkBytes)
-		if proof.ChallengeHash != expectedChallengeHash {
-			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
-		}
-		ok, verifyErr := hash.VerifyMerkleProof(proof.LeafHash, fileStore.MerkleRoot, proof.Proof)
-		if verifyErr != nil {
-			return VerifyInstantUploadProofResp{}, errors.WithMessage(verifyErr, "验证 Merkle Proof 失败")
-		}
+		//检查客户端回答的是真实存在的挑战
+		key := fmt.Sprintf("%d:%d", proof.Offset, proof.Length)
+		challenge, ok := expected[key]
 		if !ok {
 			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
 		}
-		delete(expectedParts, proof.PartNumber)
+		//把base64解码成原始字节
+		segment, decodeErr := base64.StdEncoding.DecodeString(strings.TrimSpace(proof.ContentBase64))
+		if decodeErr != nil {
+			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+		}
+		//长度检查
+		if int64(len(segment)) != challenge.Length {
+			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+		}
+		//从oss读取对应片段
+		expectedSegment := []byte{}
+		if challenge.Length > 0 {
+			expectedSegment, err = s.storage.ReadFileRange(ctx, fileStore.FileAddr, challenge.Offset, challenge.Length)
+			if err != nil {
+				return VerifyInstantUploadProofResp{}, errors.WithMessage(err, "读取挑战片段失败")
+			}
+		}
+		//字节对比
+		if !bytes.Equal(segment, expectedSegment) {
+			return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
+		}
+		//从expected中删除已通过的挑战
+		delete(expected, key)
 	}
-	if len(expectedParts) != 0 {
+	if len(expected) != 0 {
 		return VerifyInstantUploadProofResp{}, ErrInstantProofInvalid
 	}
-
+	//生成秒传凭证
 	proofToken, err := generateRandomToken()
 	if err != nil {
 		return VerifyInstantUploadProofResp{}, errors.WithMessage(err, "生成秒传凭证失败")
@@ -914,6 +828,7 @@ func (s *FileService) VerifyInstantUploadProof(ctx context.Context, userID uint,
 		FileHash:    state.FileHash,
 		HashType:    state.HashType,
 	}
+
 	if err := s.uploadCache.SetInstantProofToken(ctx, proofToken, tokenState, instantProofTokenExpire); err != nil {
 		return VerifyInstantUploadProofResp{}, errors.WithMessage(err, "保存秒传凭证失败")
 	}
@@ -1015,10 +930,6 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		return 0, errors.WithMessage(err, "文件hash计算失败")
 	}
 	fileHash := fileHashes.Full
-	merkleRoot, merkleLeafCount, err := s.buildMerkleMetaFromFileHeader(fileHeader)
-	if err != nil {
-		return 0, err
-	}
 	// 查询文件身份
 	_, err = s.fileRepo.GetFileByIdentity(ctx, hashTypeFullSHA256, fileHash)
 	// 去重上传成功
@@ -1031,9 +942,6 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 					return ErrInstantUploadUnavailable
 				}
 				return errors.WithMessage(lockErr, "文件查询异常")
-			}
-			if err := s.ensureMerkleMetadata(ctx, tx, lockedStore, merkleRoot, merkleLeafCount); err != nil {
-				return err
 			}
 			uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, parentID, fileHeader.Filename, fileHeader.Size, lockedStore)
 			return err
@@ -1074,18 +982,14 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		// 插入文件元数据
 		newFileStore := &model.FileStore{
-			HashType:        hashTypeFullSHA256,
-			FileHash:        fileHash,
-			FileName:        fileHeader.Filename,
-			FileSize:        fileHeader.Size,
-			FileAddr:        objectName,
-			HeadHash:        fileHashes.Head,
-			MidHash:         fileHashes.Mid,
-			TailHash:        fileHashes.Tail,
-			MerkleType:      merkleTypeChunkSHA256V1,
-			MerkleRoot:      merkleRoot,
-			MerkleChunkSize: hash.ChunkIdentitySize,
-			MerkleLeafCount: merkleLeafCount,
+			HashType: hashTypeFullSHA256,
+			FileHash: fileHash,
+			FileName: fileHeader.Filename,
+			FileSize: fileHeader.Size,
+			FileAddr: objectName,
+			HeadHash: fileHashes.Head,
+			MidHash:  fileHashes.Mid,
+			TailHash: fileHashes.Tail,
 		}
 		err = s.fileRepo.CreateFileStore(ctx, newFileStore, tx)
 		if err != nil {

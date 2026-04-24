@@ -4,7 +4,6 @@ import (
 	"WeDrive/internal/service"
 	"WeDrive/pkg/logger"
 	"WeDrive/pkg/response"
-	"WeDrive/pkg/utils/hash"
 	"errors"
 	"strconv"
 
@@ -30,25 +29,19 @@ type instantUploadReq struct {
 }
 
 type prepareInstantUploadReq struct {
-	HashType   string `json:"hash_type" binding:"required"`
-	FileHash   string `json:"file_hash" binding:"required"`
-	FileName   string `json:"file_name" binding:"required"`
-	FileSize   int64  `json:"file_size"`
-	ParentID   uint   `json:"parent_id"`
-	MerkleType string `json:"merkle_type" binding:"required"`
-	MerkleRoot string `json:"merkle_root" binding:"required"`
+	HashType string `json:"hash_type" binding:"required"`
+	FileHash string `json:"file_hash" binding:"required"`
+	FileName string `json:"file_name" binding:"required"`
+	FileSize int64  `json:"file_size"`
+	ParentID uint   `json:"parent_id"`
 }
 
 type verifyInstantUploadProofReq struct {
 	PrepareID string `json:"prepare_id" binding:"required"`
 	Proofs    []struct {
-		PartNumber    int    `json:"part_number" binding:"required"`
-		LeafHash      string `json:"leaf_hash" binding:"required"`
-		ChallengeHash string `json:"challenge_hash" binding:"required"`
-		Proof         []struct {
-			Hash     string `json:"hash" binding:"required"`
-			Position string `json:"position" binding:"required"`
-		} `json:"proof" binding:"required"`
+		Offset        int64  `json:"offset" binding:"required"`
+		Length        int64  `json:"length" binding:"required"`
+		ContentBase64 string `json:"content_base64"`
 	} `json:"proofs" binding:"required"`
 }
 
@@ -165,13 +158,11 @@ func (h *FileHandler) PrepareInstantUpload(c *gin.Context) {
 	}
 	userID, _ := c.Get("userID")
 	resp, err := h.fileService.PrepareInstantUpload(c.Request.Context(), userID.(uint), service.PrepareInstantUploadReq{
-		HashType:   req.HashType,
-		FileHash:   req.FileHash,
-		FileName:   req.FileName,
-		FileSize:   req.FileSize,
-		ParentID:   req.ParentID,
-		MerkleType: req.MerkleType,
-		MerkleRoot: req.MerkleRoot,
+		HashType: req.HashType,
+		FileHash: req.FileHash,
+		FileName: req.FileName,
+		FileSize: req.FileSize,
+		ParentID: req.ParentID,
 	})
 	if err != nil {
 		h.handleInstantUploadError(c, err)
@@ -187,20 +178,12 @@ func (h *FileHandler) VerifyInstantUploadProof(c *gin.Context) {
 		response.BusinessError(c, response.CodeInvalidParam, "参数无效")
 		return
 	}
-	proofs := make([]service.MerkleProofItem, 0, len(req.Proofs))
+	proofs := make([]service.InstantUploadProof, 0, len(req.Proofs))
 	for _, item := range req.Proofs {
-		nodes := make([]hash.MerkleProofNode, 0, len(item.Proof))
-		for _, node := range item.Proof {
-			nodes = append(nodes, hash.MerkleProofNode{
-				Hash:     node.Hash,
-				Position: node.Position,
-			})
-		}
-		proofs = append(proofs, service.MerkleProofItem{
-			PartNumber:    item.PartNumber,
-			LeafHash:      item.LeafHash,
-			ChallengeHash: item.ChallengeHash,
-			Proof:         nodes,
+		proofs = append(proofs, service.InstantUploadProof{
+			Offset:        item.Offset,
+			Length:        item.Length,
+			ContentBase64: item.ContentBase64,
 		})
 	}
 	userID, _ := c.Get("userID")

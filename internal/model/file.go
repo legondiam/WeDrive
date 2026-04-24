@@ -7,18 +7,14 @@ import (
 // FileStore 文件池
 type FileStore struct {
 	gorm.Model
-	HashType        string `gorm:"type:varchar(64);uniqueIndex:idx_file_store_identity,priority:1"`
-	FileHash        string `gorm:"type:varchar(128);uniqueIndex:idx_file_store_identity,priority:2"`
-	FileName        string `gorm:"type:varchar(255)"`
-	FileSize        int64  `gorm:"index:idx_file_store_sample,priority:1"`
-	FileAddr        string `gorm:"type:varchar(512)"`
-	HeadHash        string `gorm:"type:varchar(128);index:idx_file_store_sample,priority:2"`
-	MidHash         string `gorm:"type:varchar(128);index:idx_file_store_sample,priority:3"`
-	TailHash        string `gorm:"type:varchar(128);index:idx_file_store_sample,priority:4"`
-	MerkleType      string `gorm:"type:varchar(64)"`
-	MerkleRoot      string `gorm:"type:varchar(128);index"`
-	MerkleChunkSize int64
-	MerkleLeafCount int
+	HashType string `gorm:"type:varchar(64);uniqueIndex:idx_file_store_identity,priority:1"`
+	FileHash string `gorm:"type:varchar(128);uniqueIndex:idx_file_store_identity,priority:2"`
+	FileName string `gorm:"type:varchar(255)"`
+	FileSize int64  `gorm:"index:idx_file_store_sample,priority:1"`
+	FileAddr string `gorm:"type:varchar(512)"`
+	HeadHash string `gorm:"type:varchar(128);index:idx_file_store_sample,priority:2"`
+	MidHash  string `gorm:"type:varchar(128);index:idx_file_store_sample,priority:3"`
+	TailHash string `gorm:"type:varchar(128);index:idx_file_store_sample,priority:4"`
 }
 
 // UserFile 用户文件

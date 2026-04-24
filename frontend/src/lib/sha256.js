@@ -21,6 +21,20 @@ export async function calculateFileSHA256(file) {
   return digestBlob(file)
 }
 
+export async function readFileSegmentBase64(file, offset, length) {
+  if (length === 0) {
+    return ''
+  }
+  const blob = file.slice(offset, offset + length)
+  const buffer = await blob.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+  return btoa(binary)
+}
+
 export async function calculateFileSampleSHA256(file) {
   const size = file.size
   const sampleSize = Math.min(size, SAMPLE_CHUNK_SIZE)

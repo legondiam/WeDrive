@@ -27,11 +27,6 @@ type ChunkHash struct {
 	Hash       string
 }
 
-type MerkleProofNode struct {
-	Hash     string
-	Position string
-}
-
 // HashPassword 加密密码
 func HashPassword(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -234,85 +229,4 @@ func AggregateChunkHash(parts []ChunkHash, fileSize int64) (string, error) {
 // HashBytesHex 计算字节切片的 sha256 十六进制值
 func HashBytesHex(data []byte) string {
 	return hashBytes(data)
-}
-
-// ChallengeChunkHash 将 nonce 与原始分块内容绑定后计算挑战哈希
-func ChallengeChunkHash(nonce string, chunk []byte) string {
-	buf := make([]byte, 0, len(nonce)+len(chunk))
-	buf = append(buf, []byte(nonce)...)
-	buf = append(buf, chunk...)
-	return hashBytes(buf)
-}
-
-// MerkleRootFromChunkHashes 根据有序叶子分块哈希构建默克尔树根
-func MerkleRootFromChunkHashes(parts []ChunkHash) (string, int, error) {
-	if len(parts) == 0 {
-		empty := hashBytes([]byte{})
-		return empty, 1, nil
-	}
-	level := make([]string, 0, len(parts))
-	for index, part := range parts {
-		if part.PartNumber != index+1 || part.Hash == "" {
-			return "", 0, errors.New("invalid chunk hash order")
-		}
-		level = append(level, part.Hash)
-	}
-	leafCount := len(level)
-	for len(level) > 1 {
-		next := make([]string, 0, (len(level)+1)/2)
-		for i := 0; i < len(level); i += 2 {
-			left := level[i]
-			right := left
-			if i+1 < len(level) {
-				right = level[i+1]
-			}
-			parent, err := hashMerklePair(left, right)
-			if err != nil {
-				return "", 0, err
-			}
-			next = append(next, parent)
-		}
-		level = next
-	}
-	return level[0], leafCount, nil
-}
-
-// VerifyMerkleProof 根据给定证明路径校验叶子哈希是否属于指定根
-func VerifyMerkleProof(leafHash string, root string, proof []MerkleProofNode) (bool, error) {
-	current := leafHash
-	for _, node := range proof {
-		switch node.Position {
-		case "left":
-			parent, err := hashMerklePair(node.Hash, current)
-			if err != nil {
-				return false, err
-			}
-			current = parent
-		case "right":
-			parent, err := hashMerklePair(current, node.Hash)
-			if err != nil {
-				return false, err
-			}
-			current = parent
-		default:
-			return false, errors.New("invalid merkle proof position")
-		}
-	}
-	return current == root, nil
-}
-
-// hashMerklePair 计算父节点哈希
-func hashMerklePair(left string, right string) (string, error) {
-	leftRaw, err := hex.DecodeString(left)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	rightRaw, err := hex.DecodeString(right)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	buf := make([]byte, 0, len(leftRaw)+len(rightRaw))
-	buf = append(buf, leftRaw...)
-	buf = append(buf, rightRaw...)
-	return hashBytes(buf), nil
 }

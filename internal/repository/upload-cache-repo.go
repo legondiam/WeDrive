@@ -35,10 +35,12 @@ func (r *UploadCacheRepo) partEtagsKey(sessionID uint) string {
 	return fmt.Sprintf("upload_session:%d:part_etags", sessionID)
 }
 
+// instantPrepareKey 返回秒传准备key
 func (r *UploadCacheRepo) instantPrepareKey(prepareID string) string {
 	return fmt.Sprintf("instant_prepare:%s", prepareID)
 }
 
+// instantProofTokenKey 返回秒传令牌key
 func (r *UploadCacheRepo) instantProofTokenKey(token string) string {
 	return fmt.Sprintf("instant_proof_token:%s", token)
 }
@@ -176,26 +178,33 @@ func (r *UploadCacheRepo) DeleteUploadState(ctx context.Context, sessionID uint)
 	return nil
 }
 
+// SetInstantPrepare 保存秒传挑战准备态。
 func (r *UploadCacheRepo) SetInstantPrepare(ctx context.Context, prepareID string, payload any, expire time.Duration) error {
 	return r.setJSONValue(ctx, r.instantPrepareKey(prepareID), payload, expire)
 }
 
+// GetInstantPrepare 读取秒传挑战准备态。
+// target 需要传入可反序列化的目标对象指针，返回值 bool 表示 key 是否存在。
 func (r *UploadCacheRepo) GetInstantPrepare(ctx context.Context, prepareID string, target any) (bool, error) {
 	return r.getJSONValue(ctx, r.instantPrepareKey(prepareID), target)
 }
 
+// DeleteInstantPrepare 删除秒传挑战准备态。
 func (r *UploadCacheRepo) DeleteInstantPrepare(ctx context.Context, prepareID string) error {
 	return r.deleteKey(ctx, r.instantPrepareKey(prepareID))
 }
 
+// SetInstantProofToken 保存秒传令牌
 func (r *UploadCacheRepo) SetInstantProofToken(ctx context.Context, token string, payload any, expire time.Duration) error {
 	return r.setJSONValue(ctx, r.instantProofTokenKey(token), payload, expire)
 }
 
+// GetInstantProofToken 读取秒传令牌
 func (r *UploadCacheRepo) GetInstantProofToken(ctx context.Context, token string, target any) (bool, error) {
 	return r.getJSONValue(ctx, r.instantProofTokenKey(token), target)
 }
 
+// DeleteInstantProofToken 删除秒传凭证
 func (r *UploadCacheRepo) DeleteInstantProofToken(ctx context.Context, token string) error {
 	return r.deleteKey(ctx, r.instantProofTokenKey(token))
 }
