@@ -9,6 +9,7 @@ package app
 import (
 	"WeDrive/internal/api"
 	"WeDrive/internal/oss"
+	"WeDrive/internal/ratelimit"
 	"WeDrive/internal/repository"
 	"WeDrive/internal/router"
 	"WeDrive/internal/service"
@@ -27,8 +28,9 @@ func BuildApp(db *gorm.DB, redis2 *redis.Client, minio2 *minio.Client) *gin.Engi
 	userHandler := api.NewUserHandler(userService)
 	fileRepo := repository.NewFileRepo(db)
 	uploadCacheRepo := repository.NewUploadCacheRepo(redis2)
+	rateLimiter := ratelimit.NewLimiter(redis2)
 	storage := oss.NewStorage(minio2)
-	fileService := service.NewFileService(fileRepo, uploadCacheRepo, userRepo, storage, db)
+	fileService := service.NewFileService(fileRepo, uploadCacheRepo, rateLimiter, userRepo, storage, db)
 	fileHandler := api.NewFileHandler(fileService)
 	shareRepo := repository.NewShareRepo(db)
 	shareService := service.NewShareService(shareRepo, fileRepo, storage)

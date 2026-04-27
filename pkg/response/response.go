@@ -32,6 +32,7 @@ const (
 	CodeInstantProofInvalid   = 3011
 	CodeInstantPrepareInvalid = 3012
 	CodeInstantProofMismatch  = 3013
+	CodeRateLimited           = 3014
 
 	CodeShareNotFound   = 4001
 	CodeShareExpired    = 4002
@@ -57,6 +58,13 @@ func Success(c *gin.Context, data interface{}) {
 func BusinessError(c *gin.Context, code int, msg string) {
 	c.JSON(http.StatusBadRequest, Body{
 		Code: code,
+		Msg:  msg,
+	})
+}
+
+func RateLimited(c *gin.Context, msg string) {
+	c.JSON(http.StatusTooManyRequests, Body{
+		Code: CodeRateLimited,
 		Msg:  msg,
 	})
 }

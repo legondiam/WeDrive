@@ -133,6 +133,9 @@ func (h *FileHandler) QuickCheck(c *gin.Context) {
 		TailHash: req.TailHash,
 	})
 	if err != nil {
+		if h.handleRateLimitError(c, err) {
+			return
+		}
 		if errors.Is(err, service.ErrUserSpaceNotEnough) {
 			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
 			return
@@ -211,6 +214,9 @@ func (h *FileHandler) InitChunkUpload(c *gin.Context) {
 		TailHash:   req.TailHash,
 	})
 	if err != nil {
+		if h.handleRateLimitError(c, err) {
+			return
+		}
 		if errors.Is(err, service.ErrUploadRequestInvalid) {
 			response.BusinessError(c, response.CodeInvalidParam, "上传请求无效")
 			return
@@ -252,6 +258,9 @@ func (h *FileHandler) SignPartUpload(c *gin.Context) {
 		ChunkHash:  req.ChunkHash,
 	})
 	if err != nil {
+		if h.handleRateLimitError(c, err) {
+			return
+		}
 		if errors.Is(err, service.ErrUploadRequestInvalid) {
 			response.BusinessError(c, response.CodeInvalidParam, "上传请求无效")
 			return
@@ -288,6 +297,9 @@ func (h *FileHandler) ReportUploadedPart(c *gin.Context) {
 		PartNumber: req.PartNumber,
 		ETag:       req.ETag,
 	}); err != nil {
+		if h.handleRateLimitError(c, err) {
+			return
+		}
 		if errors.Is(err, service.ErrUploadRequestInvalid) {
 			response.BusinessError(c, response.CodeInvalidParam, "上传请求无效")
 			return
@@ -316,6 +328,9 @@ func (h *FileHandler) CompleteChunkUpload(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	uploadedID, err := h.fileService.CompleteChunkUpload(c.Request.Context(), userID.(uint), req.UploadID)
 	if err != nil {
+		if h.handleRateLimitError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, service.ErrUploadRequestInvalid):
 			response.BusinessError(c, response.CodeInvalidParam, "上传请求无效")
@@ -514,6 +529,9 @@ func (h *FileHandler) GetDownloadURL(c *gin.Context) {
 }
 
 func (h *FileHandler) handleInstantUploadError(c *gin.Context, err error) {
+	if h.handleRateLimitError(c, err) {
+		return
+	}
 	if errors.Is(err, service.ErrParentFolderInvalid) {
 		response.BusinessError(c, response.CodeInvalidParentID, "parent_id不合法")
 		return
@@ -552,4 +570,12 @@ func (h *FileHandler) handleInstantUploadError(c *gin.Context, err error) {
 	}
 	response.ServerError(c, "秒传失败")
 	logger.S.Errorf("秒传失败：%v", err)
+}
+
+func (h *FileHandler) handleRateLimitError(c *gin.Context, err error) bool {
+	if errors.Is(err, service.ErrRateLimited) {
+		response.RateLimited(c, "请求过于频繁，请稍后再试")
+		return true
+	}
+	return false
 }

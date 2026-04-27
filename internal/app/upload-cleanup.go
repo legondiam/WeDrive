@@ -3,6 +3,7 @@ package app
 import (
 	"WeDrive/internal/config"
 	"WeDrive/internal/oss"
+	"WeDrive/internal/ratelimit"
 	"WeDrive/internal/repository"
 	"WeDrive/internal/service"
 	"WeDrive/pkg/logger"
@@ -23,11 +24,11 @@ const (
 
 // startBackgroundJobs 启动后台任务
 func startBackgroundJobs(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client) {
-	startUploadSessionCleanup(db, redisClient, minioClient)
+	startExpiredUploadCleanup(db, redisClient, minioClient)
 }
 
-// startUploadSessionCleanup 启动上传会话定时清理任务。
-func startUploadSessionCleanup(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client) {
+// startExpiredUploadCleanup 启动僵尸分块定时清理任务。
+func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client) {
 	cleanupConf := config.GlobalConf.UploadCleanup
 	if !cleanupConf.Enabled {
 		return
@@ -48,9 +49,10 @@ func startUploadSessionCleanup(db *gorm.DB, redisClient *redis.Client, minioClie
 
 	fileRepo := repository.NewFileRepo(db)
 	uploadCacheRepo := repository.NewUploadCacheRepo(redisClient)
+	rateLimiter := ratelimit.NewLimiter(redisClient)
 	userRepo := repository.NewUserRepo(db)
 	storage := oss.NewStorage(minioClient)
-	fileService := service.NewFileService(fileRepo, uploadCacheRepo, userRepo, storage, db)
+	fileService := service.NewFileService(fileRepo, uploadCacheRepo, rateLimiter, userRepo, storage, db)
 
 	go func() {
 		// 服务启动后先执行一轮，减少历史残留会话堆积时间。
@@ -64,18 +66,18 @@ func startUploadSessionCleanup(db *gorm.DB, redisClient *redis.Client, minioClie
 		}
 	}()
 
-	logger.S.Infof("上传会话清理任务已启动, interval: %s, expireAfter: %s, batchSize: %d", interval, expireAfter, batchSize)
+	logger.S.Infof("僵尸分块清理任务已启动, interval: %s, expireAfter: %s, batchSize: %d", interval, expireAfter, batchSize)
 }
 
-// runUploadCleanup 执行单轮上传会话清理
+// runUploadCleanup 执行单轮清理
 func runUploadCleanup(fileService *service.FileService, expireAfter time.Duration, batchSize int) {
 	expireBefore := time.Now().Add(-expireAfter)
-	cleaned, err := fileService.CleanupStaleUploadSessions(context.Background(), expireBefore, batchSize)
+	cleaned, err := fileService.CleanupExpiredUploadSessions(context.Background(), expireBefore, batchSize)
 	if err != nil {
-		logger.S.Errorf("执行上传会话清理失败: %+v", err)
+		logger.S.Errorf("执行僵尸分块清理失败: %+v", err)
 		return
 	}
 	if cleaned > 0 {
-		logger.S.Infof("本轮上传会话清理完成, cleaned: %d", cleaned)
+		logger.S.Infof("本轮僵尸分块清理完成, cleaned: %d", cleaned)
 	}
 }

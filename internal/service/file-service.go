@@ -1,8 +1,9 @@
-﻿package service
+package service
 
 import (
 	"WeDrive/internal/model"
 	"WeDrive/internal/oss"
+	"WeDrive/internal/ratelimit"
 	"WeDrive/internal/repository"
 	"WeDrive/pkg/logger"
 	"WeDrive/pkg/utils/convert"
@@ -22,7 +23,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/pkg/errors"
-	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
 
@@ -43,25 +43,15 @@ var ErrInstantPrepareInvalid = errors.New("秒传挑战无效或已过期")
 var ErrInstantProofInvalid = errors.New("秒传所有权证明无效")
 var ErrInstantProofMismatch = errors.New("秒传挑战回答不匹配")
 
-const (
-	uploadSessionStatusPending   = "pending"
-	uploadSessionStatusCompleted = "completed"
-	hashTypeFullSHA256           = "full_sha256_v1"
-	chunkUploadThreshold         = 16 << 20
-	uploadStateExpire            = 24 * time.Hour
-	partUploadURLExpire          = 15 * time.Minute
-	instantPrepareExpire         = 5 * time.Minute
-	instantProofChallengeCount   = 3
-	instantProofSegmentSize      = 4 << 10
-)
+var ErrRateLimited = errors.New("请求过于频繁")
 
 type FileService struct {
-	fileRepo      *repository.FileRepo
-	uploadCache   *repository.UploadCacheRepo
-	userRepo      *repository.UserRepo
-	storage       *oss.Storage
-	db            *gorm.DB
-	completeGroup singleflight.Group
+	fileRepo    *repository.FileRepo
+	uploadCache *repository.UploadCacheRepo
+	rateLimiter *ratelimit.Limiter
+	userRepo    *repository.UserRepo
+	storage     *oss.Storage
+	db          *gorm.DB
 }
 
 type RecycleFileResp struct {
@@ -174,8 +164,20 @@ type instantPrepareState struct {
 	Challenges  []InstantUploadChallenge `json:"challenges"`
 }
 
-func NewFileService(fileRepo *repository.FileRepo, uploadCache *repository.UploadCacheRepo, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
-	return &FileService{fileRepo: fileRepo, uploadCache: uploadCache, storage: storage, db: db, userRepo: userRepo}
+func NewFileService(fileRepo *repository.FileRepo, uploadCache *repository.UploadCacheRepo, rateLimiter *ratelimit.Limiter, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
+	return &FileService{fileRepo: fileRepo, uploadCache: uploadCache, rateLimiter: rateLimiter, storage: storage, db: db, userRepo: userRepo}
+}
+
+// allowRate 对service限流
+func (s *FileService) allowRate(ctx context.Context, key string, ratePerSecond float64, burst int) error {
+	allowed, err := s.rateLimiter.AllowTokenBucket(ctx, "rate_limit:"+key, ratePerSecond, burst, uploadRateLimitTTL)
+	if err != nil {
+		return errors.WithMessage(err, "检查接口限流失败")
+	}
+	if !allowed {
+		return ErrRateLimited
+	}
+	return nil
 }
 
 // isDuplicateKeyError 判断是否为重复键错误
@@ -354,6 +356,9 @@ func (s *FileService) InitChunkUpload(ctx context.Context, userID uint, req Chun
 	if req.FileHash == "" || req.FileName == "" || req.FileSize <= 0 || req.ChunkSize != hash.ChunkIdentitySize || req.ChunkCount <= 0 {
 		return ChunkUploadInitResp{}, ErrUploadRequestInvalid
 	}
+	if err := s.allowRate(ctx, fmt.Sprintf("upload:init:user:%d", userID), uploadInitRatePerSecond, uploadInitBurst); err != nil {
+		return ChunkUploadInitResp{}, err
+	}
 	if req.FileSize < chunkUploadThreshold {
 		return ChunkUploadInitResp{}, ErrUploadMethodInvalid
 	}
@@ -435,6 +440,12 @@ func (s *FileService) SignPartUpload(ctx context.Context, userID uint, req SignP
 	if req.UploadID == 0 || req.PartNumber <= 0 || strings.TrimSpace(req.ChunkHash) == "" {
 		return SignedPartResp{}, ErrUploadRequestInvalid
 	}
+	if err := s.allowRate(ctx, fmt.Sprintf("upload:sign:user:%d", userID), uploadSignUserRatePerSecond, uploadSignUserBurst); err != nil {
+		return SignedPartResp{}, err
+	}
+	if err := s.allowRate(ctx, fmt.Sprintf("upload:sign:session:%d", req.UploadID), uploadSignSessionRatePerSecond, uploadSignSessionBurst); err != nil {
+		return SignedPartResp{}, err
+	}
 	checksumSHA256Base64, err := checksumBase64FromHex(req.ChunkHash)
 	if err != nil {
 		return SignedPartResp{}, err
@@ -491,6 +502,12 @@ func (s *FileService) ReportUploadedPart(ctx context.Context, userID uint, req R
 	if req.UploadID == 0 || req.PartNumber <= 0 || strings.TrimSpace(req.ETag) == "" {
 		return ErrUploadRequestInvalid
 	}
+	if err := s.allowRate(ctx, fmt.Sprintf("upload:report:user:%d", userID), uploadReportUserRatePerSecond, uploadReportUserBurst); err != nil {
+		return err
+	}
+	if err := s.allowRate(ctx, fmt.Sprintf("upload:report:session:%d", req.UploadID), uploadReportSessionRatePerSecond, uploadReportSessionBurst); err != nil {
+		return err
+	}
 	//查询上传会话
 	session, err := s.fileRepo.GetUploadSessionByID(ctx, req.UploadID, userID)
 	if err != nil {
@@ -504,6 +521,11 @@ func (s *FileService) ReportUploadedPart(ctx context.Context, userID uint, req R
 		return ErrUploadSessionInvalid
 	}
 	//保存分块ETag
+	if _, hashExists, err := s.uploadCache.GetPartHash(ctx, session.ID, req.PartNumber); err != nil {
+		return errors.WithMessage(err, "读取分块哈希失败")
+	} else if !hashExists {
+		return ErrUploadRequestInvalid
+	}
 	if err := s.uploadCache.SetPartETag(ctx, session.ID, req.PartNumber, req.ETag, uploadStateExpire); err != nil {
 		return errors.WithMessage(err, "保存分块ETag失败")
 	}
@@ -512,21 +534,9 @@ func (s *FileService) ReportUploadedPart(ctx context.Context, userID uint, req R
 
 // CompleteChunkUpload 完成分块上传
 func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sessionID uint) (uint, error) {
-	key := fmt.Sprintf("complete:%d:%d", userID, sessionID)
-	result, err, _ := s.completeGroup.Do(key, func() (any, error) {
-		return s.completeChunkUpload(ctx, userID, sessionID)
-	})
-	if err != nil {
+	if err := s.allowRate(ctx, fmt.Sprintf("upload:complete:user:%d", userID), uploadCompleteRatePerSecond, uploadCompleteBurst); err != nil {
 		return 0, err
 	}
-	uploadedID, ok := result.(uint)
-	if !ok {
-		return 0, errors.New("上传完成结果类型异常")
-	}
-	return uploadedID, nil
-}
-
-func (s *FileService) completeChunkUpload(ctx context.Context, userID uint, sessionID uint) (uint, error) {
 	//查询上传会话
 	session, err := s.fileRepo.GetUploadSessionByID(ctx, sessionID, userID)
 	if err != nil {
@@ -534,13 +544,6 @@ func (s *FileService) completeChunkUpload(ctx context.Context, userID uint, sess
 			return 0, ErrUploadSessionInvalid
 		}
 		return 0, errors.WithMessage(err, "查询上传会话失败")
-	}
-	//检查会话状态，已合并过的请求，直接返回id
-	if session.Status == uploadSessionStatusCompleted {
-		if session.UserFileID == 0 {
-			return 0, ErrUploadSessionInvalid
-		}
-		return session.UserFileID, nil
 	}
 	if session.Status != uploadSessionStatusPending {
 		return 0, ErrUploadSessionInvalid
@@ -593,7 +596,6 @@ func (s *FileService) completeChunkUpload(ctx context.Context, userID uint, sess
 	}()
 
 	var uploadedID uint
-	keepMinioObject := false
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		lockedSession, lockErr := s.fileRepo.GetUploadSessionByIDForUpdate(ctx, sessionID, userID, tx)
 		if lockErr != nil {
@@ -601,14 +603,6 @@ func (s *FileService) completeChunkUpload(ctx context.Context, userID uint, sess
 				return ErrUploadSessionInvalid
 			}
 			return errors.WithMessage(lockErr, "锁定上传会话失败")
-		}
-		//事务内再次检查会话状态
-		if lockedSession.Status == uploadSessionStatusCompleted {
-			if lockedSession.UserFileID == 0 {
-				return ErrUploadSessionInvalid
-			}
-			uploadedID = lockedSession.UserFileID
-			return nil
 		}
 		if lockedSession.Status != uploadSessionStatusPending {
 			return ErrUploadSessionInvalid
@@ -650,7 +644,6 @@ func (s *FileService) completeChunkUpload(ctx context.Context, userID uint, sess
 				}
 				break
 			}
-			keepMinioObject = true
 			//创建用户文件记录
 			newUserFile := &model.UserFile{
 				UserId:      userID,
@@ -669,13 +662,12 @@ func (s *FileService) completeChunkUpload(ctx context.Context, userID uint, sess
 			return errors.WithMessage(findErr, "查询文件失败")
 		}
 
-		//更新上传会话状态
-		now := time.Now()
 		lockedSession.Status = uploadSessionStatusCompleted
-		lockedSession.UserFileID = uploadedID
-		lockedSession.CompletedAt = &now
 		if err := s.fileRepo.SaveUploadSession(ctx, lockedSession, tx); err != nil {
 			return errors.WithMessage(err, "更新上传会话状态失败")
+		}
+		if err := s.fileRepo.DeleteUploadSession(ctx, lockedSession.ID, tx); err != nil {
+			return errors.WithMessage(err, "清理上传会话失败")
 		}
 		return nil
 	})
@@ -684,7 +676,7 @@ func (s *FileService) completeChunkUpload(ctx context.Context, userID uint, sess
 		return 0, errors.WithMessage(err, "完成分块上传失败")
 	}
 
-	shouldCleanMinio = !keepMinioObject
+	shouldCleanMinio = false
 	logger.S.Infof("直传分块上传完成, uploadID: %d, hashType: %s, fileHash: %s, userID: %d", sessionID, session.HashType, session.FileHash, userID)
 	return uploadedID, nil
 }
@@ -693,6 +685,9 @@ func (s *FileService) completeChunkUpload(ctx context.Context, userID uint, sess
 func (s *FileService) QuickCheck(ctx context.Context, userID uint, req QuickCheckReq) (bool, error) {
 	if req.FileSize < 0 || req.HeadHash == "" || req.MidHash == "" || req.TailHash == "" {
 		return false, nil
+	}
+	if err := s.allowRate(ctx, fmt.Sprintf("upload:quick-check:user:%d", userID), uploadQuickCheckRatePerSecond, uploadQuickCheckBurst); err != nil {
+		return false, err
 	}
 	user, err := s.userRepo.GetUserInfo(ctx, userID)
 	if err != nil {
@@ -711,6 +706,9 @@ func (s *FileService) QuickCheck(ctx context.Context, userID uint, req QuickChec
 // PrepareInstantUpload 为秒传准备随机片段挑战
 func (s *FileService) PrepareInstantUpload(ctx context.Context, userID uint, req PrepareInstantUploadReq) (PrepareInstantUploadResp, error) {
 	if err := validateHashType(req.HashType); err != nil {
+		return PrepareInstantUploadResp{}, err
+	}
+	if err := s.allowRate(ctx, fmt.Sprintf("upload:instant-prepare:user:%d", userID), uploadInstantPrepareRatePerSecond, uploadInstantPrepareBurst); err != nil {
 		return PrepareInstantUploadResp{}, err
 	}
 	if err := s.checkParentFolder(ctx, userID, req.ParentID); err != nil {
@@ -846,6 +844,9 @@ func (s *FileService) verifyInstantUploadProof(ctx context.Context, userID uint,
 // InstantUpload 命中秒传
 func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID uint, hashType string, fileName string, fileHash string, fileSize int64, prepareID string, proofs []InstantUploadProof) (uint, error) {
 	if err := validateHashType(hashType); err != nil {
+		return 0, err
+	}
+	if err := s.allowRate(ctx, fmt.Sprintf("upload:instant:user:%d", userID), uploadInstantRatePerSecond, uploadInstantBurst); err != nil {
 		return 0, err
 	}
 	if err := s.checkParentFolder(ctx, userID, parentID); err != nil {
@@ -1292,30 +1293,17 @@ func (s *FileService) GetDownloadURL(ctx context.Context, userID uint, userFileI
 	return DownloadFileResp{URL: url, FileName: fileName}, nil
 }
 
-// CleanupStaleUploadSessions 清理陈旧上传会话。
-func (s *FileService) CleanupStaleUploadSessions(ctx context.Context, expireBefore time.Time, limit int) (int, error) {
-	// 清理超时未完成的僵尸会话。
+// CleanupExpiredUploadSessions 清理超时未完成的分块上传会话
+func (s *FileService) CleanupExpiredUploadSessions(ctx context.Context, expireBefore time.Time, limit int) (int, error) {
+	//获取已超时的会话
 	sessions, err := s.fileRepo.ListExpiredPendingUploadSessions(ctx, expireBefore, limit)
 	if err != nil {
 		return 0, errors.WithMessage(err, "查询超时上传会话失败")
 	}
 	cleaned := 0
 	for _, session := range sessions {
-		if err := s.cleanupStalePendingUploadSession(ctx, session); err != nil {
+		if err := s.cleanupExpiredUploadSession(ctx, session); err != nil {
 			logger.S.Errorf("清理僵尸分块上传失败, uploadID: %d, objectName: %s, err: %+v", session.ID, session.ObjectName, err)
-			continue
-		}
-		cleaned++
-	}
-
-	// 清理超过幂等保留期的已完成会话。
-	completedSessions, err := s.fileRepo.ListExpiredCompletedUploadSessions(ctx, expireBefore, limit)
-	if err != nil {
-		return cleaned, errors.WithMessage(err, "查询过期已完成上传会话失败")
-	}
-	for _, session := range completedSessions {
-		if err := s.fileRepo.DeleteUploadSession(ctx, session.ID); err != nil {
-			logger.S.Errorf("清理过期已完成上传会话失败, uploadID: %d, err: %+v", session.ID, err)
 			continue
 		}
 		cleaned++
@@ -1323,8 +1311,8 @@ func (s *FileService) CleanupStaleUploadSessions(ctx context.Context, expireBefo
 	return cleaned, nil
 }
 
-// cleanupStalePendingUploadSession 清理某条超时未完成的僵尸会话。
-func (s *FileService) cleanupStalePendingUploadSession(ctx context.Context, session model.UploadSession) error {
+// cleanupExpiredUploadSession 清理某条僵尸会话
+func (s *FileService) cleanupExpiredUploadSession(ctx context.Context, session model.UploadSession) error {
 	if session.Status != uploadSessionStatusPending {
 		return nil
 	}
