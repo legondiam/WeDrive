@@ -23,11 +23,11 @@ const (
 
 // startBackgroundJobs 启动后台任务
 func startBackgroundJobs(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client) {
-	startExpiredUploadCleanup(db, redisClient, minioClient)
+	startUploadSessionCleanup(db, redisClient, minioClient)
 }
 
-// startExpiredUploadCleanup 启动僵尸分块定时清理任务。
-func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client) {
+// startUploadSessionCleanup 启动上传会话定时清理任务。
+func startUploadSessionCleanup(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client) {
 	cleanupConf := config.GlobalConf.UploadCleanup
 	if !cleanupConf.Enabled {
 		return
@@ -64,18 +64,18 @@ func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, minioClie
 		}
 	}()
 
-	logger.S.Infof("僵尸分块清理任务已启动, interval: %s, expireAfter: %s, batchSize: %d", interval, expireAfter, batchSize)
+	logger.S.Infof("上传会话清理任务已启动, interval: %s, expireAfter: %s, batchSize: %d", interval, expireAfter, batchSize)
 }
 
-// runUploadCleanup 执行单轮清理
+// runUploadCleanup 执行单轮上传会话清理
 func runUploadCleanup(fileService *service.FileService, expireAfter time.Duration, batchSize int) {
 	expireBefore := time.Now().Add(-expireAfter)
-	cleaned, err := fileService.CleanupExpiredUploadSessions(context.Background(), expireBefore, batchSize)
+	cleaned, err := fileService.CleanupStaleUploadSessions(context.Background(), expireBefore, batchSize)
 	if err != nil {
-		logger.S.Errorf("执行僵尸分块清理失败: %+v", err)
+		logger.S.Errorf("执行上传会话清理失败: %+v", err)
 		return
 	}
 	if cleaned > 0 {
-		logger.S.Infof("本轮僵尸分块清理完成, cleaned: %d", cleaned)
+		logger.S.Infof("本轮上传会话清理完成, cleaned: %d", cleaned)
 	}
 }

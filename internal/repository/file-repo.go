@@ -96,6 +96,20 @@ func (r *FileRepo) ListExpiredPendingUploadSessions(ctx context.Context, expireB
 	return sessions, errors.WithStack(err)
 }
 
+// ListExpiredCompletedUploadSessions 查询超过幂等保留期的已完成上传会话
+func (r *FileRepo) ListExpiredCompletedUploadSessions(ctx context.Context, expireBefore time.Time, limit int) ([]model.UploadSession, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var sessions []model.UploadSession
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND completed_at IS NOT NULL AND completed_at < ?", "completed", expireBefore).
+		Order("completed_at ASC").
+		Limit(limit).
+		Find(&sessions).Error
+	return sessions, errors.WithStack(err)
+}
+
 // TouchUploadSession 刷新上传会话的活跃时间
 func (r *FileRepo) TouchUploadSession(ctx context.Context, sessionID uint, tx ...*gorm.DB) error {
 	db := r.db

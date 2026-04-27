@@ -1,6 +1,10 @@
 package model
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // UploadSession 分块上传会话
 type UploadSession struct {
@@ -19,4 +23,6 @@ type UploadSession struct {
 	ObjectName      string `gorm:"type:varchar(512)"`
 	StorageUploadID string `gorm:"type:varchar(255)"`
 	Status          string `gorm:"type:varchar(32);index"`
+	UserFileID      uint
+	CompletedAt     *time.Time
 }
