@@ -8,14 +8,15 @@ const (
 	uploadSessionStatusCompleted = "completed"
 
 	// 分块/秒传参数
-	hashTypeFullSHA256         = "full_sha256_v1"
-	chunkUploadThreshold       = 16 << 20
-	uploadStateExpire          = 24 * time.Hour
-	partUploadURLExpire        = 15 * time.Minute
-	instantPrepareExpire       = 5 * time.Minute
-	instantProofChallengeCount = 3
-	instantProofSegmentSize    = 4 << 10
-	uploadRateLimitTTL         = 10 * time.Minute
+	hashTypeFullSHA256              = "full_sha256_v1"
+	chunkUploadThreshold            = 16 << 20
+	uploadStateExpire               = 24 * time.Hour
+	partUploadURLExpire             = 15 * time.Minute
+	instantPrepareExpire            = 5 * time.Minute
+	instantProofChallengeCount      = 3
+	instantProofSegmentSize         = 4 << 10
+	uploadRateLimitTTL              = 10 * time.Minute
+	maxPendingUploadSessionsPerUser = 10
 
 	// 限流参数
 	uploadInitRatePerSecond = 10.0 / 60.0

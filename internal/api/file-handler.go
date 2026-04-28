@@ -237,6 +237,10 @@ func (h *FileHandler) InitChunkUpload(c *gin.Context) {
 			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
 			return
 		}
+		if errors.Is(err, service.ErrTooManyPendingUploads) {
+			response.BusinessError(c, response.CodeTooManyPendingUploads, "未完成上传任务过多，请先完成或稍后重试")
+			return
+		}
 		response.ServerError(c, "初始化分块上传失败")
 		logger.S.Errorf("初始化分块上传失败：%v", err)
 		return

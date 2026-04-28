@@ -33,6 +33,7 @@ const (
 	CodeInstantPrepareInvalid = 3012
 	CodeInstantProofMismatch  = 3013
 	CodeRateLimited           = 3014
+	CodeTooManyPendingUploads = 3015
 
 	CodeShareNotFound   = 4001
 	CodeShareExpired    = 4002
