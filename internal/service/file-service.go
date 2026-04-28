@@ -45,6 +45,8 @@ var ErrInstantProofMismatch = errors.New("秒传挑战回答不匹配")
 
 var ErrRateLimited = errors.New("请求过于频繁")
 
+var ErrTooManyPendingUploads = errors.New("未完成上传任务过多")
+
 type FileService struct {
 	fileRepo    *repository.FileRepo
 	uploadCache *repository.UploadCacheRepo
@@ -398,6 +400,15 @@ func (s *FileService) InitChunkUpload(ctx context.Context, userID uint, req Chun
 	}
 
 	//不存在可用的上传会话
+
+	//查询用户已有的未完成上传会话
+	pendingCount, err := s.fileRepo.CountPendingUploadSessionsByUser(ctx, userID)
+	if err != nil {
+		return ChunkUploadInitResp{}, errors.WithMessage(err, "查询未完成上传会话数量失败")
+	}
+	if pendingCount >= maxPendingUploadSessionsPerUser {
+		return ChunkUploadInitResp{}, ErrTooManyPendingUploads
+	}
 
 	//生成oss对象名
 	objectName := fmt.Sprintf("multipart/%s%s", uuid.NewString(), path.Ext(req.FileName))

@@ -134,7 +134,20 @@ InitChunkUpload
 
 ---
 
-### 3. 文件池去重、用户空间与对象生命周期
+### 3. 多层限流与带宽治理
+
+项目没有把限流只做成一个全局 QPS 开关，而是按“数据流量”和“业务控制面”分层治理：
+
+- **网关层管大流量**：大文件分块内容通过 MinIO 预签名 URL 直传，不经过业务服务；上传流量可以在 Nginx 按预签名上传路径/请求特征做限速。下载 URL 会被包装成 `/WeDrive/{exp}/{tier}/{signature}/{object}` 形式，签名内容绑定 `uri + exp + tier + secret`，网关校验 secure link 后可以按 `tier` 配置不同下载限速策略。
+- **业务层管控制接口**：`init/sign-part/report-part/complete/quick-check/instant-*` 这些小 JSON 接口走 Redis 令牌桶限流，按 `user_id`、`upload_id` 做不同粒度控制，防止刷签名、刷 Redis 状态和高频探测文件 hash。
+- **资源层限制堆积**：`InitChunkUpload` 除了限频，还限制单个用户未完成的 pending 上传会话数，避免恶意用户慢速创建大量 multipart upload，占住 MySQL/MinIO 清理资源。
+- **最终提交做幂等保护**：`CompleteChunkUpload` 是上传链路的最终提交动作，不只依赖限流，还通过幂等状态避免重复提交造成假失败或重复落库。
+
+这套设计的边界比较清楚：Nginx 负责上传/下载字节流的带宽治理，Redis 令牌桶负责业务控制接口的请求速率，数据库状态和上传会话上限负责资源占用约束。
+
+---
+
+### 4. 文件池去重、用户空间与对象生命周期
 
 项目把“物理文件”和“用户文件”拆成两张表：
 
@@ -223,6 +236,7 @@ internal/initialize/    MySQL、Redis、MinIO 初始化
 internal/middleware/    JWT、超时、管理员中间件
 internal/model/         GORM 模型
 internal/oss/           MinIO 封装
+internal/ratelimit/     Redis 令牌桶限流组件
 internal/repository/    数据访问层
 internal/router/        路由注册
 internal/service/       核心业务逻辑

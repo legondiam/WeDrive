@@ -50,6 +50,16 @@ func (r *FileRepo) GetPendingUploadSession(ctx context.Context, userID uint, par
 	return &session, errors.WithStack(err)
 }
 
+// CountPendingUploadSessionsByUser 统计用户当前未完成的分块上传会话数。
+func (r *FileRepo) CountPendingUploadSessionsByUser(ctx context.Context, userID uint) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&model.UploadSession{}).
+		Where("user_id = ? AND status = ?", userID, "pending").
+		Count(&count).Error
+	return count, errors.WithStack(err)
+}
+
 // GetUploadSessionByID 获取分块上传会话
 func (r *FileRepo) GetUploadSessionByID(ctx context.Context, sessionID uint, userID uint, tx ...*gorm.DB) (*model.UploadSession, error) {
 	db := r.db
