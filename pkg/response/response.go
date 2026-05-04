@@ -19,21 +19,22 @@ const (
 	CodeAccountOrPassword   = 2002
 	CodeRefreshTokenMissing = 2003
 
-	CodeUserSpaceNotEnough    = 3001
-	CodeFileNotFound          = 3002
-	CodeInstantUnavailable    = 3003
-	CodeUploadSessionInvalid  = 3004
-	CodeChunkUploadIncomplete = 3005
-	CodeChunkFileHashMismatch = 3006
-	CodeUploadMethodInvalid   = 3007
-	CodeChunkAlreadyUploaded  = 3008
-	CodeChunkHashConflict     = 3009
-	CodeInstantProofRequired  = 3010
-	CodeInstantProofInvalid   = 3011
-	CodeInstantPrepareInvalid = 3012
-	CodeInstantProofMismatch  = 3013
-	CodeRateLimited           = 3014
-	CodeTooManyPendingUploads = 3015
+	CodeUserSpaceNotEnough      = 3001
+	CodeFileNotFound            = 3002
+	CodeInstantUnavailable      = 3003
+	CodeUploadSessionInvalid    = 3004
+	CodeChunkUploadIncomplete   = 3005
+	CodeChunkFileHashMismatch   = 3006
+	CodeUploadMethodInvalid     = 3007
+	CodeChunkAlreadyUploaded    = 3008
+	CodeChunkHashConflict       = 3009
+	CodeInstantProofRequired    = 3010
+	CodeInstantProofInvalid     = 3011
+	CodeInstantPrepareInvalid   = 3012
+	CodeInstantProofMismatch    = 3013
+	CodeRateLimited             = 3014
+	CodeTooManyPendingUploads   = 3015
+	CodeUploadSessionProcessing = 3016
 
 	CodeShareNotFound   = 4001
 	CodeShareExpired    = 4002

@@ -342,6 +342,8 @@ func (h *FileHandler) CompleteChunkUpload(c *gin.Context) {
 			response.BusinessError(c, response.CodeUserSpaceNotEnough, "用户空间不足")
 		case errors.Is(err, service.ErrUploadSessionInvalid):
 			response.BusinessError(c, response.CodeUploadSessionInvalid, "上传会话无效")
+		case errors.Is(err, service.ErrUploadSessionProcessing):
+			response.BusinessError(c, response.CodeUploadSessionProcessing, "该上传正在处理中，请稍后重试")
 		case errors.Is(err, service.ErrChunkUploadIncomplete):
 			response.BusinessError(c, response.CodeChunkUploadIncomplete, "仍有分块未上传完成")
 		case errors.Is(err, service.ErrChunkFileHashMismatch):
