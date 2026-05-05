@@ -558,6 +558,11 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	if !locked {
 		return 0, ErrUploadSessionProcessing
 	}
+	refreshCtx, cancelRefresh := context.WithCancel(context.Background())
+	defer cancelRefresh()
+	s.rateLimiter.AutoRefreshLock(refreshCtx, lockKey, lockToken, uploadCompleteLockTTL, func(err error) {
+		logger.S.Errorf("续期上传完成锁失败, uploadID: %d, err: %+v", sessionID, err)
+	})
 	//释放分布式锁
 	defer func() {
 		_ = s.rateLimiter.Unlock(context.Background(), lockKey, lockToken)
