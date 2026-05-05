@@ -17,6 +17,7 @@ const (
 	instantProofSegmentSize         = 4 << 10
 	uploadRateLimitTTL              = 10 * time.Minute
 	uploadCompleteLockTTL           = 30 * time.Second
+	uploadCompleteLockMaxRefresh    = 2 * time.Minute
 	maxPendingUploadSessionsPerUser = 10
 
 	// 限流参数

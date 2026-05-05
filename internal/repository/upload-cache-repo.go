@@ -21,6 +21,15 @@ type UploadCacheRepo struct {
 	client *redis.Client
 }
 
+// 获取并删除秒传挑战准备态
+const consumeInstantPrepareScript = `
+local value = redis.call("GET", KEYS[1])
+if value then
+	redis.call("DEL", KEYS[1])
+end
+return value
+`
+
 func NewUploadCacheRepo(client *redis.Client) *UploadCacheRepo {
 	return &UploadCacheRepo{client: client}
 }
@@ -182,6 +191,25 @@ func (r *UploadCacheRepo) SetInstantPrepare(ctx context.Context, prepareID strin
 // target 需要传入可反序列化的目标对象指针，返回值 bool 表示 key 是否存在。
 func (r *UploadCacheRepo) GetInstantPrepare(ctx context.Context, prepareID string, target any) (bool, error) {
 	return r.getJSONValue(ctx, r.instantPrepareKey(prepareID), target)
+}
+
+// ConsumeInstantPrepare 原子读取并删除秒传挑战准备态。
+func (r *UploadCacheRepo) ConsumeInstantPrepare(ctx context.Context, prepareID string, target any) (bool, error) {
+	result, err := r.client.Eval(ctx, consumeInstantPrepareScript, []string{r.instantPrepareKey(prepareID)}).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return false, nil
+		}
+		return false, errors.WithStack(err)
+	}
+	raw, ok := result.(string)
+	if !ok {
+		return false, errors.New("instant prepare state format invalid")
+	}
+	if err := json.Unmarshal([]byte(raw), target); err != nil {
+		return false, errors.WithStack(err)
+	}
+	return true, nil
 }
 
 // DeleteInstantPrepare 删除秒传挑战准备态。

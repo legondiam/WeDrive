@@ -558,7 +558,8 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	if !locked {
 		return 0, ErrUploadSessionProcessing
 	}
-	refreshCtx, cancelRefresh := context.WithCancel(context.Background())
+	refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), uploadCompleteLockMaxRefresh)
+	//续期锁，并在最后停止续期
 	defer cancelRefresh()
 	s.rateLimiter.AutoRefreshLock(refreshCtx, lockKey, lockToken, uploadCompleteLockTTL, func(err error) {
 		logger.S.Errorf("续期上传完成锁失败, uploadID: %d, err: %+v", sessionID, err)
@@ -819,7 +820,7 @@ func (s *FileService) verifyInstantUploadProof(ctx context.Context, userID uint,
 	}
 
 	var state instantPrepareState
-	found, err := s.uploadCache.GetInstantPrepare(ctx, req.PrepareID, &state)
+	found, err := s.uploadCache.ConsumeInstantPrepare(ctx, req.PrepareID, &state)
 	if err != nil {
 		return instantPrepareState{}, 0, errors.WithMessage(err, "读取秒传挑战失败")
 	}
@@ -913,11 +914,6 @@ func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID u
 	if prepareState.ParentID != parentID || prepareState.HashType != hashType || prepareState.FileHash != fileHash {
 		return 0, ErrInstantPrepareInvalid
 	}
-	//消费秒传挑战
-	if err := s.uploadCache.DeleteInstantPrepare(ctx, prepareID); err != nil {
-		return 0, errors.WithMessage(err, "消费秒传挑战失败")
-	}
-
 	var uploadedID uint
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		//加锁读取文件存储记录，避免并发修改影响秒传
