@@ -1,6 +1,7 @@
 package service
 
 import (
+	"WeDrive/internal/cache"
 	"WeDrive/internal/model"
 	"WeDrive/internal/oss"
 	"WeDrive/internal/repository"
@@ -19,9 +20,10 @@ var ErrShareExpired = errors.New("分享已过期")
 var ErrShareNotFound = errors.New("分享不存在")
 
 type ShareService struct {
-	shareRepo *repository.ShareRepo
-	fileRepo  *repository.FileRepo
-	storage   *oss.Storage
+	shareRepo  *repository.ShareRepo
+	shareCache *repository.ShareCacheRepo
+	fileRepo   *repository.FileRepo
+	storage    *oss.Storage
 }
 
 type shareDownloadResp struct {
@@ -29,8 +31,8 @@ type shareDownloadResp struct {
 	FileName string
 }
 
-func NewShareService(shareRepo *repository.ShareRepo, fileRepo *repository.FileRepo, storage *oss.Storage) *ShareService {
-	return &ShareService{shareRepo: shareRepo, fileRepo: fileRepo, storage: storage}
+func NewShareService(shareRepo *repository.ShareRepo, shareCache *repository.ShareCacheRepo, fileRepo *repository.FileRepo, storage *oss.Storage) *ShareService {
+	return &ShareService{shareRepo: shareRepo, shareCache: shareCache, fileRepo: fileRepo, storage: storage}
 }
 
 // CreateShareFile 创建分享文件
@@ -68,13 +70,16 @@ func (s *ShareService) CreateShareFile(ctx context.Context, userID uint, userFil
 	if err != nil {
 		return "", errors.WithMessage(err, "创建分享文件失败")
 	}
+	if err := s.shareCache.SetShareToken(ctx, shareTokenCacheFromModel(shareFile)); err != nil {
+		return "", errors.WithMessage(err, "缓存分享文件失败")
+	}
 	return token, nil
 }
 
 // GetShareDownloadURL 获取分享文件下载URL
 func (s *ShareService) GetShareDownloadURL(ctx context.Context, token string, key string) (shareDownloadResp, error) {
 	//获取分享文件
-	shareFile, err := s.shareRepo.GetShareFile(ctx, token)
+	shareFile, err := s.getShareFileByToken(ctx, token)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return shareDownloadResp{}, ErrShareNotFound
@@ -106,4 +111,44 @@ func (s *ShareService) GetShareDownloadURL(ctx context.Context, token string, ke
 		return shareDownloadResp{}, errors.WithMessage(err, "获取下载URL失败")
 	}
 	return shareDownloadResp{URL: url, FileName: fileName}, nil
+}
+
+func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*model.ShareFile, error) {
+	cachedShare, ok, err := s.shareCache.GetShareToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return shareFileFromCache(cachedShare), nil
+	}
+
+	shareFile, err := s.shareRepo.GetShareFile(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.shareCache.SetShareToken(ctx, shareTokenCacheFromModel(shareFile)); err != nil {
+		return nil, err
+	}
+	return shareFile, nil
+}
+
+func shareTokenCacheFromModel(shareFile *model.ShareFile) cache.ShareToken {
+	return cache.ShareToken{
+		ID:         shareFile.ID,
+		UserID:     shareFile.UserID,
+		UserFileID: shareFile.UserFileID,
+		ShareToken: shareFile.ShareToken,
+		KeyHash:    shareFile.KeyHash,
+		ExpiresAt:  shareFile.ExpiresAt,
+	}
+}
+
+func shareFileFromCache(item *cache.ShareToken) *model.ShareFile {
+	return &model.ShareFile{
+		UserID:     item.UserID,
+		UserFileID: item.UserFileID,
+		ShareToken: item.ShareToken,
+		KeyHash:    item.KeyHash,
+		ExpiresAt:  item.ExpiresAt,
+	}
 }

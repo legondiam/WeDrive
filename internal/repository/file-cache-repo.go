@@ -1,0 +1,152 @@
+package repository
+
+import (
+	"WeDrive/internal/cache"
+	"WeDrive/internal/model"
+	"context"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
+)
+
+type FileCacheRepo struct {
+	client *redis.Client
+}
+
+func NewFileCacheRepo(client *redis.Client) *FileCacheRepo {
+	return &FileCacheRepo{client: client}
+}
+
+// SetUserFileList 缓存用户指定目录下的文件列表
+func (r *FileCacheRepo) SetUserFileList(ctx context.Context, userID uint, parentID uint, list []cache.FileListItem) error {
+	return cache.SetJSON(ctx, r.client, cache.UserFileListKey(userID, parentID), list, cache.FileListTTL)
+}
+
+// GetUserFileList 获取用户指定目录下的文件列表缓存
+func (r *FileCacheRepo) GetUserFileList(ctx context.Context, userID uint, parentID uint) ([]cache.FileListItem, bool, error) {
+	var list []cache.FileListItem
+	ok, err := cache.GetJSON(ctx, r.client, cache.UserFileListKey(userID, parentID), &list)
+	return list, ok, err
+}
+
+// DeleteUserFileList 删除用户指定目录下的文件列表缓存
+func (r *FileCacheRepo) DeleteUserFileList(ctx context.Context, userID uint, parentID uint) error {
+	return cache.Delete(ctx, r.client, cache.UserFileListKey(userID, parentID))
+}
+
+// SetRecycleBinList 缓存用户回收站文件列表
+func (r *FileCacheRepo) SetRecycleBinList(ctx context.Context, userID uint, list []cache.RecycleFileListItem) error {
+	return cache.SetJSON(ctx, r.client, cache.RecycleBinListKey(userID), list, cache.FileListTTL)
+}
+
+// GetRecycleBinList 获取用户回收站文件列表缓存
+func (r *FileCacheRepo) GetRecycleBinList(ctx context.Context, userID uint) ([]cache.RecycleFileListItem, bool, error) {
+	var list []cache.RecycleFileListItem
+	ok, err := cache.GetJSON(ctx, r.client, cache.RecycleBinListKey(userID), &list)
+	return list, ok, err
+}
+
+// DeleteRecycleBinList 删除用户回收站文件列表缓存
+func (r *FileCacheRepo) DeleteRecycleBinList(ctx context.Context, userID uint) error {
+	return cache.Delete(ctx, r.client, cache.RecycleBinListKey(userID))
+}
+
+// SetUserFileMeta 缓存用户文件下载所需的元数据
+func (r *FileCacheRepo) SetUserFileMeta(ctx context.Context, userID uint, userFileID uint, meta cache.UserFileMeta) error {
+	return cache.SetJSON(ctx, r.client, cache.UserFileMetaKey(userID, userFileID), meta, cache.FileMetaTTL)
+}
+
+// GetUserFileMeta 获取用户文件下载所需的元数据缓存
+func (r *FileCacheRepo) GetUserFileMeta(ctx context.Context, userID uint, userFileID uint) (*cache.UserFileMeta, bool, error) {
+	var meta cache.UserFileMeta
+	ok, err := cache.GetJSON(ctx, r.client, cache.UserFileMetaKey(userID, userFileID), &meta)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	return &meta, true, nil
+}
+
+// DeleteUserFileMeta 删除用户文件下载元数据缓存
+func (r *FileCacheRepo) DeleteUserFileMeta(ctx context.Context, userID uint, userFileID uint) error {
+	return cache.Delete(ctx, r.client, cache.UserFileMetaKey(userID, userFileID))
+}
+
+// SetFileIdentity 缓存文件池身份信息
+func (r *FileCacheRepo) SetFileIdentity(ctx context.Context, file *model.FileStore) error {
+	return cache.SetJSON(ctx, r.client, cache.FileIdentityKey(file.HashType, file.FileHash), fileIdentityFromModel(file), cache.FileIdentityTTL)
+}
+
+// GetFileIdentity 根据哈希身份获取文件池身份缓存
+func (r *FileCacheRepo) GetFileIdentity(ctx context.Context, hashType string, fileHash string) (*model.FileStore, bool, error) {
+	var item cache.FileIdentity
+	ok, err := cache.GetJSON(ctx, r.client, cache.FileIdentityKey(hashType, fileHash), &item)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	return fileStoreFromIdentity(item), true, nil
+}
+
+// DeleteFileIdentity 删除文件池身份缓存
+func (r *FileCacheRepo) DeleteFileIdentity(ctx context.Context, hashType string, fileHash string) error {
+	return cache.Delete(ctx, r.client, cache.FileIdentityKey(hashType, fileHash))
+}
+
+// SetFileSample 缓存抽样哈希是否命中文件池
+func (r *FileCacheRepo) SetFileSample(ctx context.Context, fileSize int64, headHash string, midHash string, tailHash string, exists bool) error {
+	return cache.SetJSON(ctx, r.client, cache.FileSampleKey(fileSize, headHash, midHash, tailHash), cache.FileSample{Exists: exists}, cache.FileSampleTTL)
+}
+
+// GetFileSample 根据抽样哈希获取文件池命中缓存
+func (r *FileCacheRepo) GetFileSample(ctx context.Context, fileSize int64, headHash string, midHash string, tailHash string) (bool, bool, error) {
+	var sample cache.FileSample
+	ok, err := cache.GetJSON(ctx, r.client, cache.FileSampleKey(fileSize, headHash, midHash, tailHash), &sample)
+	if err != nil || !ok {
+		return false, ok, err
+	}
+	return sample.Exists, true, nil
+}
+
+// fileIdentityFromModel 将文件池模型转换为缓存结构
+func fileIdentityFromModel(file *model.FileStore) cache.FileIdentity {
+	return cache.FileIdentity{
+		ID:        file.ID,
+		HashType:  file.HashType,
+		FileHash:  file.FileHash,
+		FileName:  file.FileName,
+		FileSize:  file.FileSize,
+		FileAddr:  file.FileAddr,
+		HeadHash:  file.HeadHash,
+		MidHash:   file.MidHash,
+		TailHash:  file.TailHash,
+		CreatedAt: file.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt: file.UpdatedAt.Format(time.RFC3339Nano),
+	}
+}
+
+// fileStoreFromIdentity 将文件池身份缓存还原为文件池模型
+func fileStoreFromIdentity(item cache.FileIdentity) *model.FileStore {
+	createdAt, err := time.Parse(time.RFC3339Nano, item.CreatedAt)
+	if err != nil {
+		createdAt = time.Time{}
+	}
+	updatedAt, err := time.Parse(time.RFC3339Nano, item.UpdatedAt)
+	if err != nil {
+		updatedAt = time.Time{}
+	}
+	return &model.FileStore{
+		Model: gorm.Model{
+			ID:        item.ID,
+			CreatedAt: createdAt,
+			UpdatedAt: updatedAt,
+		},
+		HashType: item.HashType,
+		FileHash: item.FileHash,
+		FileName: item.FileName,
+		FileSize: item.FileSize,
+		FileAddr: item.FileAddr,
+		HeadHash: item.HeadHash,
+		MidHash:  item.MidHash,
+		TailHash: item.TailHash,
+	}
+}

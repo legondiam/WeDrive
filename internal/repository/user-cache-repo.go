@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"WeDrive/internal/cache"
 	"context"
 	"fmt"
 	"github.com/pkg/errors"
@@ -47,4 +48,21 @@ func (c *UserCacheRepo) DeleteRefreshToken(ctx context.Context, tokenID string) 
 		return errors.WithStack(err)
 	}
 	return nil
+}
+
+func (c *UserCacheRepo) SetUserInfo(ctx context.Context, user cache.UserInfo) error {
+	return cache.SetJSON(ctx, c.client, cache.UserInfoKey(user.ID), user, cache.UserInfoTTL)
+}
+
+func (c *UserCacheRepo) GetUserInfo(ctx context.Context, userID uint) (*cache.UserInfo, bool, error) {
+	var user cache.UserInfo
+	ok, err := cache.GetJSON(ctx, c.client, cache.UserInfoKey(userID), &user)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	return &user, true, nil
+}
+
+func (c *UserCacheRepo) DeleteUserInfo(ctx context.Context, userID uint) error {
+	return cache.Delete(ctx, c.client, cache.UserInfoKey(userID))
 }

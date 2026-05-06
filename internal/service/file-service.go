@@ -1,6 +1,7 @@
-package service
+﻿package service
 
 import (
+	"WeDrive/internal/cache"
 	"WeDrive/internal/model"
 	"WeDrive/internal/oss"
 	"WeDrive/internal/ratelimit"
@@ -50,9 +51,11 @@ var ErrUploadSessionProcessing = errors.New("上传会话正在处理中")
 
 type FileService struct {
 	fileRepo    *repository.FileRepo
+	fileCache   *repository.FileCacheRepo
 	uploadCache *repository.UploadCacheRepo
 	rateLimiter *ratelimit.Limiter
 	userRepo    *repository.UserRepo
+	userCache   *repository.UserCacheRepo
 	storage     *oss.Storage
 	db          *gorm.DB
 }
@@ -167,8 +170,20 @@ type instantPrepareState struct {
 	Challenges  []InstantUploadChallenge `json:"challenges"`
 }
 
-func NewFileService(fileRepo *repository.FileRepo, uploadCache *repository.UploadCacheRepo, rateLimiter *ratelimit.Limiter, userRepo *repository.UserRepo, storage *oss.Storage, db *gorm.DB) *FileService {
-	return &FileService{fileRepo: fileRepo, uploadCache: uploadCache, rateLimiter: rateLimiter, storage: storage, db: db, userRepo: userRepo}
+func NewFileService(fileRepo *repository.FileRepo, fileCache *repository.FileCacheRepo, uploadCache *repository.UploadCacheRepo, rateLimiter *ratelimit.Limiter, userRepo *repository.UserRepo, userCache *repository.UserCacheRepo, storage *oss.Storage, db *gorm.DB) *FileService {
+	return &FileService{fileRepo: fileRepo, fileCache: fileCache, uploadCache: uploadCache, rateLimiter: rateLimiter, storage: storage, db: db, userRepo: userRepo, userCache: userCache}
+}
+
+func (s *FileService) deleteUserInfoCache(ctx context.Context, userID uint) {
+	if err := s.userCache.DeleteUserInfo(ctx, userID); err != nil {
+		logger.S.Warnf("删除用户信息缓存失败:%v", err)
+	}
+}
+
+func (s *FileService) deleteUserFileListCache(ctx context.Context, userID uint, parentID uint) {
+	if err := s.fileCache.DeleteUserFileList(ctx, userID, parentID); err != nil {
+		logger.S.Warnf("删除文件列表缓存失败:%v", err)
+	}
 }
 
 // allowRate 对service限流
@@ -725,6 +740,8 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	}
 
 	logger.S.Infof("直传分块上传完成, uploadID: %d, hashType: %s, fileHash: %s, userID: %d", sessionID, session.HashType, session.FileHash, userID)
+	s.deleteUserInfoCache(ctx, userID)
+	s.deleteUserFileListCache(ctx, userID, session.ParentID)
 	return uploadedID, nil
 }
 
@@ -743,9 +760,19 @@ func (s *FileService) QuickCheck(ctx context.Context, userID uint, req QuickChec
 	if user.UsedSpace+req.FileSize > user.TotalSpace {
 		return false, ErrUserSpaceNotEnough
 	}
-	exists, err := s.fileRepo.GetFileBySample(ctx, req.FileSize, req.HeadHash, req.MidHash, req.TailHash)
+	exists, hit, err := s.fileCache.GetFileSample(ctx, req.FileSize, req.HeadHash, req.MidHash, req.TailHash)
+	if err != nil {
+		logger.S.Warnf("读取抽样哈希缓存失败:%v", err)
+	}
+	if hit {
+		return exists, nil
+	}
+	exists, err = s.fileRepo.GetFileBySample(ctx, req.FileSize, req.HeadHash, req.MidHash, req.TailHash)
 	if err != nil {
 		return false, errors.WithMessage(err, "抽样哈希查询失败")
+	}
+	if err := s.fileCache.SetFileSample(ctx, req.FileSize, req.HeadHash, req.MidHash, req.TailHash, exists); err != nil {
+		logger.S.Warnf("写入抽样哈希缓存失败:%v", err)
 	}
 	return exists, nil
 }
@@ -769,12 +796,21 @@ func (s *FileService) PrepareInstantUpload(ctx context.Context, userID uint, req
 	if err != nil {
 		return PrepareInstantUploadResp{}, errors.WithMessage(err, "获取用户信息失败")
 	}
-	fileStore, err := s.fileRepo.GetFileByIdentity(ctx, req.HashType, req.FileHash)
+	fileStore, hit, err := s.fileCache.GetFileIdentity(ctx, req.HashType, req.FileHash)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return PrepareInstantUploadResp{}, ErrInstantUploadUnavailable
+		logger.S.Warnf("读取文件身份缓存失败:%v", err)
+	}
+	if !hit {
+		fileStore, err = s.fileRepo.GetFileByIdentity(ctx, req.HashType, req.FileHash)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return PrepareInstantUploadResp{}, ErrInstantUploadUnavailable
+			}
+			return PrepareInstantUploadResp{}, errors.WithMessage(err, "查询文件失败")
 		}
-		return PrepareInstantUploadResp{}, errors.WithMessage(err, "查询文件失败")
+		if err := s.fileCache.SetFileIdentity(ctx, fileStore); err != nil {
+			logger.S.Warnf("写入文件身份缓存失败:%v", err)
+		}
 	}
 	if req.FileSize > 0 && fileStore.FileSize != req.FileSize {
 		return PrepareInstantUploadResp{}, ErrInstantUploadUnavailable
@@ -949,6 +985,8 @@ func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID u
 	}
 
 	logger.S.Infof("前端秒传确认成功, hashType: %s, fileHash: %s, userID: %d, parentID: %d", hashType, fileHash, userID, parentID)
+	s.deleteUserInfoCache(ctx, userID)
+	s.deleteUserFileListCache(ctx, userID, parentID)
 	return uploadedID, nil
 }
 
@@ -994,6 +1032,10 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		})
 		if !errors.Is(err, ErrInstantUploadUnavailable) {
 			logger.S.Infof("去重上传成功, fileHash: %s, userID: %d, parentID: %d", fileHash, userID, parentID)
+			if err == nil {
+				s.deleteUserInfoCache(ctx, userID)
+				s.deleteUserFileListCache(ctx, userID, parentID)
+			}
 			return uploadedID, err
 		}
 	}
@@ -1061,6 +1103,10 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		shouldCleanMinio = false
 		return nil
 	})
+	if err == nil {
+		s.deleteUserInfoCache(ctx, userID)
+		s.deleteUserFileListCache(ctx, userID, parentID)
+	}
 	return uploadedID, err
 }
 
@@ -1094,6 +1140,10 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 			}
 			return errors.WithMessage(err, "删除子文件失败")
 		}
+		s.deleteUserFileListCache(ctx, userID, root.ParentID)
+		if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
+			logger.S.Warnf("删除回收站缓存失败:%v", err)
+		}
 		return nil
 	}
 	// 删除文件
@@ -1103,6 +1153,13 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 			return ErrFileNotFound
 		}
 		return errors.WithMessage(err, "删除文件失败")
+	}
+	s.deleteUserFileListCache(ctx, userID, root.ParentID)
+	if err := s.fileCache.DeleteUserFileMeta(ctx, userID, userFileID); err != nil {
+		logger.S.Warnf("删除文件元数据缓存失败:%v", err)
+	}
+	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
+		logger.S.Warnf("删除回收站缓存失败:%v", err)
 	}
 	return nil
 }
@@ -1115,6 +1172,7 @@ func (s *FileService) BatchDeleteFile(ctx context.Context, userID uint, userFile
 
 	ids := make([]uint, 0, len(userFileIDs))
 	visited := make(map[uint]struct{}, len(userFileIDs))
+	parentIDs := make(map[uint]struct{}, len(userFileIDs))
 
 	for _, userFileID := range userFileIDs {
 		if _, ok := visited[userFileID]; ok {
@@ -1131,6 +1189,7 @@ func (s *FileService) BatchDeleteFile(ctx context.Context, userID uint, userFile
 
 		visited[userFileID] = struct{}{}
 		ids = append(ids, userFileID)
+		parentIDs[root.ParentID] = struct{}{}
 
 		if root.IsFolder {
 			if err := s.collectSubtreeIDs(ctx, userID, userFileID, &ids, visited); err != nil {
@@ -1147,6 +1206,12 @@ func (s *FileService) BatchDeleteFile(ctx context.Context, userID uint, userFile
 		return errors.WithMessage(err, "批量删除文件失败")
 	}
 
+	for parentID := range parentIDs {
+		s.deleteUserFileListCache(ctx, userID, parentID)
+	}
+	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
+		logger.S.Warnf("删除回收站缓存失败:%v", err)
+	}
 	return nil
 }
 
@@ -1156,6 +1221,13 @@ func (s *FileService) GetUserFile(ctx context.Context, userID uint, parentID uin
 	err := s.checkParentFolder(ctx, userID, parentID)
 	if err != nil {
 		return nil, errors.WithMessage(err, "父文件夹不合法")
+	}
+	cachedList, ok, err := s.fileCache.GetUserFileList(ctx, userID, parentID)
+	if err != nil {
+		logger.S.Warnf("读取文件列表缓存失败:%v", err)
+	}
+	if ok {
+		return fileRespListFromCache(cachedList), nil
 	}
 	// 查询用户文件
 	list, err := s.fileRepo.GetUserFile(ctx, userID, parentID)
@@ -1179,7 +1251,40 @@ func (s *FileService) GetUserFile(ctx context.Context, userID uint, parentID uin
 		}
 		resp = append(resp, item)
 	}
+	if err := s.fileCache.SetUserFileList(ctx, userID, parentID, fileRespListToCache(resp)); err != nil {
+		logger.S.Warnf("写入文件列表缓存失败:%v", err)
+	}
 	return resp, nil
+}
+
+func fileRespListToCache(list []FileResp) []cache.FileListItem {
+	items := make([]cache.FileListItem, 0, len(list))
+	for _, item := range list {
+		items = append(items, cache.FileListItem{
+			ID:        item.ID,
+			FileName:  item.FileName,
+			IsFolder:  item.IsFolder,
+			FileSize:  item.FileSize,
+			UpdatedAt: item.UpdatedAt,
+			ParentID:  item.ParentID,
+		})
+	}
+	return items
+}
+
+func fileRespListFromCache(list []cache.FileListItem) []FileResp {
+	items := make([]FileResp, 0, len(list))
+	for _, item := range list {
+		items = append(items, FileResp{
+			ID:        item.ID,
+			FileName:  item.FileName,
+			IsFolder:  item.IsFolder,
+			FileSize:  item.FileSize,
+			UpdatedAt: item.UpdatedAt,
+			ParentID:  item.ParentID,
+		})
+	}
+	return items
 }
 
 // CreateFolder 创建文件夹
@@ -1202,11 +1307,19 @@ func (s *FileService) CreateFolder(ctx context.Context, userID uint, parentID ui
 		return errors.WithMessage(err, "创建文件夹失败")
 	}
 
+	s.deleteUserFileListCache(ctx, userID, parentID)
 	return nil
 }
 
 // ListRecycleBin 查询回收站
 func (s *FileService) ListRecycleBin(ctx context.Context, userID uint) ([]RecycleFileResp, error) {
+	cachedList, ok, err := s.fileCache.GetRecycleBinList(ctx, userID)
+	if err != nil {
+		logger.S.Warnf("读取回收站缓存失败:%v", err)
+	}
+	if ok {
+		return recycleFileRespListFromCache(cachedList), nil
+	}
 	// 查询回收站
 	list, err := s.fileRepo.ListRecycleBin(ctx, userID)
 	if err != nil {
@@ -1229,17 +1342,58 @@ func (s *FileService) ListRecycleBin(ctx context.Context, userID uint) ([]Recycl
 		}
 		resp = append(resp, item)
 	}
+	if err := s.fileCache.SetRecycleBinList(ctx, userID, recycleFileRespListToCache(resp)); err != nil {
+		logger.S.Warnf("写入回收站缓存失败:%v", err)
+	}
 	return resp, nil
+}
+
+func recycleFileRespListToCache(list []RecycleFileResp) []cache.RecycleFileListItem {
+	items := make([]cache.RecycleFileListItem, 0, len(list))
+	for _, item := range list {
+		items = append(items, cache.RecycleFileListItem{
+			ID:        item.ID,
+			FileName:  item.FileName,
+			IsFolder:  item.IsFolder,
+			FileSize:  item.FileSize,
+			DeletedAt: item.DeletedAt,
+		})
+	}
+	return items
+}
+
+func recycleFileRespListFromCache(list []cache.RecycleFileListItem) []RecycleFileResp {
+	items := make([]RecycleFileResp, 0, len(list))
+	for _, item := range list {
+		items = append(items, RecycleFileResp{
+			ID:        item.ID,
+			FileName:  item.FileName,
+			IsFolder:  item.IsFolder,
+			FileSize:  item.FileSize,
+			DeletedAt: item.DeletedAt,
+		})
+	}
+	return items
 }
 
 // RestoreUserFile 恢复文件
 func (s *FileService) RestoreUserFile(ctx context.Context, userID uint, ID uint) error {
+	file, loadErr := s.fileRepo.GetDeletedUserFileByID(ctx, userID, ID)
+	if loadErr != nil && !errors.Is(loadErr, gorm.ErrRecordNotFound) {
+		return errors.WithMessage(loadErr, "查询回收站文件失败")
+	}
 	err := s.fileRepo.RestoreUserFile(ctx, userID, ID)
 	if err != nil {
 		if errors.Is(repository.ErrFileNotFound, err) {
 			return ErrFileNotFound
 		}
 		return errors.WithMessage(err, "恢复文件失败")
+	}
+	if loadErr == nil {
+		s.deleteUserFileListCache(ctx, userID, file.ParentID)
+	}
+	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
+		logger.S.Warnf("删除回收站缓存失败:%v", err)
 	}
 	return nil
 }
@@ -1257,7 +1411,13 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 
 	// 文件夹不占空间，也没有文件池记录，直接硬删除用户文件记录
 	if file.IsFolder || file.FileStoreID == nil {
-		return s.fileRepo.HardDeleteUserFile(ctx, userID, userFileID)
+		if err := s.fileRepo.HardDeleteUserFile(ctx, userID, userFileID); err != nil {
+			return err
+		}
+		if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
+			logger.S.Warnf("删除回收站缓存失败:%v", err)
+		}
+		return nil
 	}
 
 	// 普通文件：需要释放用户空间，并在无人引用时删除文件池和 MinIO 对象
@@ -1300,6 +1460,13 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 	if err != nil {
 		return err
 	}
+	s.deleteUserInfoCache(ctx, userID)
+	if err := s.fileCache.DeleteUserFileMeta(ctx, userID, userFileID); err != nil {
+		logger.S.Warnf("删除文件元数据缓存失败:%v", err)
+	}
+	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
+		logger.S.Warnf("删除回收站缓存失败:%v", err)
+	}
 
 	// 事务提交后，若已无任何引用，则尝试删除 MinIO 对象
 	count, err := s.fileRepo.CountAllUserFileByStoreID(ctx, storeID)
@@ -1314,25 +1481,54 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 
 // GetDownloadURL 获取下载URL
 func (s *FileService) GetDownloadURL(ctx context.Context, userID uint, userFileID uint) (DownloadFileResp, error) {
-	file, fileName, err := s.fileRepo.GetFileStoreByID(ctx, userFileID, userID)
+	fileMeta, hit, err := s.fileCache.GetUserFileMeta(ctx, userID, userFileID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return DownloadFileResp{}, ErrFileNotFound
+		logger.S.Warnf("读取文件元数据缓存失败:%v", err)
+	}
+	if !hit {
+		file, fileName, err := s.fileRepo.GetFileStoreByID(ctx, userFileID, userID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return DownloadFileResp{}, ErrFileNotFound
+			}
+			return DownloadFileResp{}, errors.WithMessage(err, "获取文件失败")
 		}
-		return DownloadFileResp{}, errors.WithMessage(err, "获取文件失败")
+		fileMeta = &cache.UserFileMeta{
+			FileStoreID: file.ID,
+			FileName:    fileName,
+			FileSize:    file.FileSize,
+			FileAddr:    file.FileAddr,
+		}
+		if err := s.fileCache.SetUserFileMeta(ctx, userID, userFileID, *fileMeta); err != nil {
+			logger.S.Warnf("写入文件元数据缓存失败:%v", err)
+		}
 	}
 	//检查用户会员状态
-	user, err := s.userRepo.GetUserInfo(ctx, userID)
+	tier := "free"
+	cachedUser, ok, err := s.userCache.GetUserInfo(ctx, userID)
 	if err != nil {
-		return DownloadFileResp{}, errors.WithMessage(err, "获取用户信息失败")
+		logger.S.Warnf("读取用户信息缓存失败:%v", err)
 	}
-	tier := s.checkUserMember(user)
+	if ok {
+		if cachedUser.MemberLevel > 0 && cachedUser.VipExpireAt != nil && cachedUser.VipExpireAt.After(time.Now()) {
+			tier = "vip"
+		}
+	} else {
+		user, err := s.userRepo.GetUserInfo(ctx, userID)
+		if err != nil {
+			return DownloadFileResp{}, errors.WithMessage(err, "获取用户信息失败")
+		}
+		if err := s.userCache.SetUserInfo(ctx, userInfoCacheFromModel(user)); err != nil {
+			logger.S.Warnf("写入用户信息缓存失败:%v", err)
+		}
+		tier = s.checkUserMember(user)
+	}
 
-	url, err := s.storage.DownloadFile(ctx, file.FileAddr, fileName, 15*time.Minute, tier)
+	url, err := s.storage.DownloadFile(ctx, fileMeta.FileAddr, fileMeta.FileName, 15*time.Minute, tier)
 	if err != nil {
 		return DownloadFileResp{}, errors.WithMessage(err, "下载URL获取失败")
 	}
-	return DownloadFileResp{URL: url, FileName: fileName}, nil
+	return DownloadFileResp{URL: url, FileName: fileMeta.FileName}, nil
 }
 
 // CleanupExpiredUploadSessions 清理超时未完成的分块上传会话

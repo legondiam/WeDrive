@@ -48,11 +48,13 @@ func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, minioClie
 	}
 
 	fileRepo := repository.NewFileRepo(db)
+	fileCacheRepo := repository.NewFileCacheRepo(redisClient)
 	uploadCacheRepo := repository.NewUploadCacheRepo(redisClient)
 	rateLimiter := ratelimit.NewLimiter(redisClient)
 	userRepo := repository.NewUserRepo(db)
+	userCacheRepo := repository.NewUserCacheRepo(redisClient)
 	storage := oss.NewStorage(minioClient)
-	fileService := service.NewFileService(fileRepo, uploadCacheRepo, rateLimiter, userRepo, storage, db)
+	fileService := service.NewFileService(fileRepo, fileCacheRepo, uploadCacheRepo, rateLimiter, userRepo, userCacheRepo, storage, db)
 
 	go func() {
 		// 服务启动后先执行一轮，减少历史残留会话堆积时间。

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"WeDrive/internal/cache"
 	"WeDrive/internal/model"
 	"WeDrive/internal/repository"
 	"WeDrive/pkg/logger"
@@ -58,12 +59,11 @@ func (s *UserService) Register(ctx context.Context, username string, password st
 
 // Login 登录
 func (s *UserService) Login(ctx context.Context, username string, password string) (string, string, error) {
-	//查找用户
 	user, err := s.userRepo.GetUserByName(ctx, username)
 	if err != nil {
 		return "", "", errors.WithMessage(ErrAccountOrPassword, "账号或密码错误")
 	}
-	//校验密码
+
 	ok, err := hash.CheckPassword(password, user.Password)
 	if err != nil {
 		return "", "", errors.WithMessage(err, "密码校验失败")
@@ -71,7 +71,7 @@ func (s *UserService) Login(ctx context.Context, username string, password strin
 	if !ok {
 		return "", "", errors.WithMessage(ErrAccountOrPassword, "账号或密码错误")
 	}
-	//生成token
+
 	accessToken, err := jwts.GenerateAccessToken(user.ID, user.Username)
 	if err != nil {
 		return "", "", errors.WithMessage(err, "生成accessToken失败")
@@ -80,25 +80,21 @@ func (s *UserService) Login(ctx context.Context, username string, password strin
 	if err != nil {
 		return "", "", errors.WithMessage(err, "生成refreshToken失败")
 	}
-	//缓存refreshtoken
-	err = s.usercacheRepo.SetRefreshToken(ctx, user.ID, tokenID, 7*24*time.Hour)
-	if err != nil {
+	if err = s.usercacheRepo.SetRefreshToken(ctx, user.ID, tokenID, 7*24*time.Hour); err != nil {
 		return "", "", errors.WithMessage(err, "缓存refreshToken失败")
 	}
-	//fmt.Println("refreshtoken:", refreshToken, "\ntokenID:", tokenID, "\nuserid:", user.ID)
 	return accessToken, refreshToken, nil
 }
 
 // RefreshToken 刷新token
 func (s *UserService) RefreshToken(ctx context.Context, oldRefreshToken string) (string, string, error) {
-	//校验token
 	claims, err := jwts.ValidateToken(oldRefreshToken)
 	if err != nil {
 		return "", "", errors.WithMessage(err, "token校验失败")
 	}
 	oldTokenID := claims.RegisteredClaims.ID
 	userID := claims.UserID
-	//校验token是否在缓存中
+
 	ok, err := s.usercacheRepo.GetRefreshToken(ctx, userID, oldTokenID)
 	if err != nil {
 		return "", "", errors.WithMessage(err, "校验token失败")
@@ -107,7 +103,6 @@ func (s *UserService) RefreshToken(ctx context.Context, oldRefreshToken string) 
 		return "", "", ErrTokenNotFound
 	}
 
-	//生成token
 	accessToken, err := jwts.GenerateAccessToken(userID, claims.Username)
 	if err != nil {
 		return "", "", errors.WithMessage(err, "生成accessToken失败")
@@ -116,13 +111,10 @@ func (s *UserService) RefreshToken(ctx context.Context, oldRefreshToken string) 
 	if err != nil {
 		return "", "", errors.WithMessage(err, "生成refreshToken失败")
 	}
-	//缓存refreshToken
-	err = s.usercacheRepo.SetRefreshToken(ctx, userID, newTokenID, 7*24*time.Hour)
-	if err != nil {
+	if err = s.usercacheRepo.SetRefreshToken(ctx, userID, newTokenID, 7*24*time.Hour); err != nil {
 		return "", "", errors.WithMessage(err, "缓存refreshToken失败")
 	}
-	err = s.usercacheRepo.DeleteRefreshToken(ctx, oldTokenID)
-	if err != nil {
+	if err = s.usercacheRepo.DeleteRefreshToken(ctx, oldTokenID); err != nil {
 		logger.S.Warnf("删除refreshToken失败:%v", err)
 		return "", "", errors.WithMessage(err, "删除refreshToken失败")
 	}
@@ -139,8 +131,7 @@ func (s *UserService) Logout(ctx context.Context, refreshToken string) error {
 	if tokenID == "" {
 		return nil
 	}
-	err = s.usercacheRepo.DeleteRefreshToken(ctx, tokenID)
-	if err != nil {
+	if err = s.usercacheRepo.DeleteRefreshToken(ctx, tokenID); err != nil {
 		return errors.WithMessage(err, "删除refreshToken失败")
 	}
 	return nil
@@ -148,40 +139,67 @@ func (s *UserService) Logout(ctx context.Context, refreshToken string) error {
 
 // GetUserInfo 获取用户信息
 func (s *UserService) GetUserInfo(ctx context.Context, userID uint) (*UserInfoResp, error) {
+	cachedUser, ok, err := s.usercacheRepo.GetUserInfo(ctx, userID)
+	if err != nil {
+		logger.S.Warnf("读取用户信息缓存失败:%v", err)
+	}
+	if ok {
+		return userInfoRespFromCache(cachedUser), nil
+	}
+
 	user, err := s.userRepo.GetUserInfo(ctx, userID)
 	if err != nil {
 		return nil, errors.WithMessage(err, "获取用户信息失败")
 	}
+	cacheUser := userInfoCacheFromModel(user)
+	if err := s.usercacheRepo.SetUserInfo(ctx, cacheUser); err != nil {
+		logger.S.Warnf("写入用户信息缓存失败:%v", err)
+	}
+	return userInfoRespFromCache(&cacheUser), nil
+}
+
+// UpdateUserMember 更新用户会员状态
+func (s *UserService) UpdateUserMember(ctx context.Context, userID uint, memberLevel int8, vipMonths int) error {
+	user, err := s.userRepo.GetUserInfo(ctx, userID)
+	if err != nil {
+		return errors.WithMessage(err, "获取用户会员信息失败")
+	}
+
+	baseTime := time.Now()
+	if user.VipExpireAt != nil && user.VipExpireAt.After(baseTime) {
+		baseTime = *user.VipExpireAt
+	}
+	vipExpireAt := baseTime.AddDate(0, vipMonths, 0)
+	if err = s.userRepo.UpdateUserMember(ctx, userID, memberLevel, &vipExpireAt); err != nil {
+		return errors.WithMessage(err, "更新用户会员状态失败")
+	}
+	if err := s.usercacheRepo.DeleteUserInfo(ctx, userID); err != nil {
+		logger.S.Warnf("删除用户信息缓存失败:%v", err)
+	}
+	return nil
+}
+
+// userInfoCacheFromModel 将用户模型转换为缓存结构
+func userInfoCacheFromModel(user *model.User) cache.UserInfo {
+	return cache.UserInfo{
+		ID:          user.ID,
+		Username:    user.Username,
+		TotalSpace:  user.TotalSpace,
+		UsedSpace:   user.UsedSpace,
+		MemberLevel: user.MemberLevel,
+		VipExpireAt: user.VipExpireAt,
+	}
+}
+
+// userInfoRespFromCache 将用户缓存转换为响应结构
+func userInfoRespFromCache(user *cache.UserInfo) *UserInfoResp {
 	now := time.Now()
 	isMember := user.MemberLevel > 0 && user.VipExpireAt != nil && user.VipExpireAt.After(now)
-	//格式化返回数据
-	userInfoResp := &UserInfoResp{
+	return &UserInfoResp{
 		Username:     user.Username,
 		TotalSpace:   convert.FormatFileSize(user.TotalSpace),
 		UsedSpace:    convert.FormatFileSize(user.UsedSpace),
 		IsMember:     isMember,
 		MemberStatus: map[bool]string{true: "会员", false: "非会员"}[isMember],
 	}
-	return userInfoResp, nil
-}
-
-// UpdateUserMember 更新用户会员状态
-func (s *UserService) UpdateUserMember(ctx context.Context, userID uint, memberLevel int8, vipMonths int) error {
-	//获取用户会员信息
-	user, err := s.userRepo.GetUserInfo(ctx, userID)
-	if err != nil {
-		return errors.WithMessage(err, "获取用户会员信息失败")
-	}
-	//计算会员到期时间
-	baseTime := time.Now()
-	if user.VipExpireAt != nil && user.VipExpireAt.After(baseTime) {
-		baseTime = *user.VipExpireAt
-	}
-	vipExpireAt := baseTime.AddDate(0, vipMonths, 0)
-	//更新用户会员状态
-	err = s.userRepo.UpdateUserMember(ctx, userID, memberLevel, &vipExpireAt)
-	if err != nil {
-		return errors.WithMessage(err, "更新用户会员状态失败")
-	}
-	return nil
 }
