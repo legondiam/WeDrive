@@ -4,9 +4,11 @@ import (
 	"WeDrive/internal/cache"
 	"context"
 	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
-	"time"
 )
 
 type UserCacheRepo struct {
@@ -50,17 +52,71 @@ func (c *UserCacheRepo) DeleteRefreshToken(ctx context.Context, tokenID string) 
 	return nil
 }
 
+// SetUserInfo 缓存用户信息
 func (c *UserCacheRepo) SetUserInfo(ctx context.Context, user cache.UserInfo) error {
-	return cache.SetJSON(ctx, c.client, cache.UserInfoKey(user.ID), user, cache.UserInfoTTL)
+	vipExpireAt := ""
+	if user.VipExpireAt != nil {
+		vipExpireAt = user.VipExpireAt.Format(time.RFC3339Nano)
+	}
+	key := cache.UserInfoKey(user.ID)
+	//事务管道存入并设置过期时间
+	pipe := c.client.TxPipeline()
+	pipe.HSet(ctx, key, map[string]any{
+		"id":            strconv.FormatUint(uint64(user.ID), 10),
+		"username":      user.Username,
+		"total_space":   strconv.FormatInt(user.TotalSpace, 10),
+		"used_space":    strconv.FormatInt(user.UsedSpace, 10),
+		"member_level":  strconv.FormatInt(int64(user.MemberLevel), 10),
+		"vip_expire_at": vipExpireAt,
+	})
+	pipe.Expire(ctx, key, cache.UserInfoTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
 }
 
+// GetUserInfo 从缓存中获取用户信息
 func (c *UserCacheRepo) GetUserInfo(ctx context.Context, userID uint) (*cache.UserInfo, bool, error) {
-	var user cache.UserInfo
-	ok, err := cache.GetJSON(ctx, c.client, cache.UserInfoKey(userID), &user)
-	if err != nil || !ok {
-		return nil, ok, err
+	values, err := c.client.HGetAll(ctx, cache.UserInfoKey(userID)).Result()
+	if err != nil {
+		return nil, false, errors.WithStack(err)
 	}
-	return &user, true, nil
+	if len(values) == 0 {
+		return nil, false, nil
+	}
+	id, err := strconv.ParseUint(values["id"], 10, 64)
+	if err != nil {
+		return nil, false, errors.WithStack(err)
+	}
+	totalSpace, err := strconv.ParseInt(values["total_space"], 10, 64)
+	if err != nil {
+		return nil, false, errors.WithStack(err)
+	}
+	usedSpace, err := strconv.ParseInt(values["used_space"], 10, 64)
+	if err != nil {
+		return nil, false, errors.WithStack(err)
+	}
+	memberLevel, err := strconv.ParseInt(values["member_level"], 10, 8)
+	if err != nil {
+		return nil, false, errors.WithStack(err)
+	}
+	var vipExpireAt *time.Time
+	if values["vip_expire_at"] != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, values["vip_expire_at"])
+		if err != nil {
+			return nil, false, errors.WithStack(err)
+		}
+		vipExpireAt = &parsed
+	}
+	return &cache.UserInfo{
+		ID:          uint(id),
+		Username:    values["username"],
+		TotalSpace:  totalSpace,
+		UsedSpace:   usedSpace,
+		MemberLevel: int8(memberLevel),
+		VipExpireAt: vipExpireAt,
+	}, true, nil
 }
 
 func (c *UserCacheRepo) DeleteUserInfo(ctx context.Context, userID uint) error {

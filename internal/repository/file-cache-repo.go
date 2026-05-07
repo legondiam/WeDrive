@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -94,17 +95,26 @@ func (r *FileCacheRepo) DeleteFileIdentity(ctx context.Context, hashType string,
 
 // SetFileSample 缓存抽样哈希是否命中文件池
 func (r *FileCacheRepo) SetFileSample(ctx context.Context, fileSize int64, headHash string, midHash string, tailHash string, exists bool) error {
-	return cache.SetJSON(ctx, r.client, cache.FileSampleKey(fileSize, headHash, midHash, tailHash), cache.FileSample{Exists: exists}, cache.FileSampleTTL)
+	value := "0"
+	if exists {
+		value = "1"
+	}
+	if err := r.client.Set(ctx, cache.FileSampleKey(fileSize, headHash, midHash, tailHash), value, cache.FileSampleTTL).Err(); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
 }
 
 // GetFileSample 根据抽样哈希获取文件池命中缓存
 func (r *FileCacheRepo) GetFileSample(ctx context.Context, fileSize int64, headHash string, midHash string, tailHash string) (bool, bool, error) {
-	var sample cache.FileSample
-	ok, err := cache.GetJSON(ctx, r.client, cache.FileSampleKey(fileSize, headHash, midHash, tailHash), &sample)
-	if err != nil || !ok {
-		return false, ok, err
+	value, err := r.client.Get(ctx, cache.FileSampleKey(fileSize, headHash, midHash, tailHash)).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return false, false, nil
+		}
+		return false, false, errors.WithStack(err)
 	}
-	return sample.Exists, true, nil
+	return value == "1", true, nil
 }
 
 // fileIdentityFromModel 将文件池模型转换为缓存结构

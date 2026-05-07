@@ -49,10 +49,6 @@ type FileIdentity struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-type FileSample struct {
-	Exists bool `json:"exists"`
-}
-
 type ShareToken struct {
 	ID         uint       `json:"id"`
 	UserID     uint       `json:"user_id"`
