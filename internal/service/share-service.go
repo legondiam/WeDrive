@@ -4,6 +4,7 @@ import (
 	"WeDrive/internal/cache"
 	"WeDrive/internal/model"
 	"WeDrive/internal/oss"
+	"WeDrive/internal/ratelimit"
 	"WeDrive/internal/repository"
 	"WeDrive/pkg/utils/hash"
 	"WeDrive/pkg/utils/jwts"
@@ -20,10 +21,11 @@ var ErrShareExpired = errors.New("分享已过期")
 var ErrShareNotFound = errors.New("分享不存在")
 
 type ShareService struct {
-	shareRepo  *repository.ShareRepo
-	shareCache *repository.ShareCacheRepo
-	fileRepo   *repository.FileRepo
-	storage    *oss.Storage
+	shareRepo   *repository.ShareRepo
+	shareCache  *repository.ShareCacheRepo
+	fileRepo    *repository.FileRepo
+	rateLimiter *ratelimit.Limiter
+	storage     *oss.Storage
 }
 
 type shareDownloadResp struct {
@@ -31,8 +33,8 @@ type shareDownloadResp struct {
 	FileName string
 }
 
-func NewShareService(shareRepo *repository.ShareRepo, shareCache *repository.ShareCacheRepo, fileRepo *repository.FileRepo, storage *oss.Storage) *ShareService {
-	return &ShareService{shareRepo: shareRepo, shareCache: shareCache, fileRepo: fileRepo, storage: storage}
+func NewShareService(shareRepo *repository.ShareRepo, shareCache *repository.ShareCacheRepo, fileRepo *repository.FileRepo, rateLimiter *ratelimit.Limiter, storage *oss.Storage) *ShareService {
+	return &ShareService{shareRepo: shareRepo, shareCache: shareCache, fileRepo: fileRepo, rateLimiter: rateLimiter, storage: storage}
 }
 
 // CreateShareFile 创建分享文件
@@ -122,14 +124,52 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 		return shareFileFromCache(cachedShare), nil
 	}
 
-	shareFile, err := s.shareRepo.GetShareFile(ctx, token)
+	//缓存未命中，获取锁
+	lockKey := "lock:cache:share:token:" + token
+	lockToken, locked, err := s.rateLimiter.TryLock(ctx, lockKey, cacheRebuildLockTTL)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.shareCache.SetShareToken(ctx, shareTokenCacheFromModel(shareFile)); err != nil {
-		return nil, err
+	//获取到锁，重建缓存
+	if locked {
+		defer func() {
+			_ = s.rateLimiter.Unlock(context.Background(), lockKey, lockToken)
+		}()
+		//再次查缓存
+		cachedShare, ok, err = s.shareCache.GetShareToken(ctx, token)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return shareFileFromCache(cachedShare), nil
+		}
+		shareFile, err := s.shareRepo.GetShareFile(ctx, token)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.shareCache.SetShareToken(ctx, shareTokenCacheFromModel(shareFile)); err != nil {
+			return nil, err
+		}
+		return shareFile, nil
 	}
-	return shareFile, nil
+
+	//获取不到锁，重试
+	for i := 0; i < cacheRebuildRetry; i++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(cacheRebuildWait):
+		}
+		cachedShare, ok, err = s.shareCache.GetShareToken(ctx, token)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return shareFileFromCache(cachedShare), nil
+		}
+	}
+
+	return nil, ErrCacheRebuilding
 }
 
 func shareTokenCacheFromModel(shareFile *model.ShareFile) cache.ShareToken {

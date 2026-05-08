@@ -45,6 +45,7 @@ var ErrInstantProofInvalid = errors.New("秒传所有权证明无效")
 var ErrInstantProofMismatch = errors.New("秒传挑战回答不匹配")
 
 var ErrRateLimited = errors.New("请求过于频繁")
+var ErrCacheRebuilding = errors.New("缓存重建中")
 
 var ErrTooManyPendingUploads = errors.New("未完成上传任务过多")
 var ErrUploadSessionProcessing = errors.New("上传会话正在处理中")
@@ -1189,8 +1190,8 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
 		return s.fileCache.DeleteUserFileList(ctx, userID, root.ParentID)
 	})
-	if err := s.fileCache.DeleteUserFileMeta(ctx, userID, userFileID); err != nil {
-		logger.S.Warnf("删除文件元数据缓存失败:%v", err)
+	if err := s.fileCache.DeleteDownloadFileMeta(ctx, userID, userFileID); err != nil {
+		logger.S.Warnf("删除下载文件元数据缓存失败:%v", err)
 	}
 	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 		logger.S.Warnf("删除回收站缓存失败:%v", err)
@@ -1514,8 +1515,8 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
 		return s.userCache.DeleteUserInfo(ctx, userID)
 	})
-	if err := s.fileCache.DeleteUserFileMeta(ctx, userID, userFileID); err != nil {
-		logger.S.Warnf("删除文件元数据缓存失败:%v", err)
+	if err := s.fileCache.DeleteDownloadFileMeta(ctx, userID, userFileID); err != nil {
+		logger.S.Warnf("删除下载文件元数据缓存失败:%v", err)
 	}
 	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 		logger.S.Warnf("删除回收站缓存失败:%v", err)
@@ -1534,9 +1535,9 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 
 // GetDownloadURL 获取下载URL
 func (s *FileService) GetDownloadURL(ctx context.Context, userID uint, userFileID uint) (DownloadFileResp, error) {
-	fileMeta, hit, err := s.fileCache.GetUserFileMeta(ctx, userID, userFileID)
+	fileMeta, hit, err := s.fileCache.GetDownloadFileMeta(ctx, userID, userFileID)
 	if err != nil {
-		logger.S.Warnf("读取文件元数据缓存失败:%v", err)
+		logger.S.Warnf("读取下载文件元数据缓存失败:%v", err)
 	}
 	if !hit {
 		file, fileName, err := s.fileRepo.GetFileStoreByID(ctx, userFileID, userID)
@@ -1546,14 +1547,14 @@ func (s *FileService) GetDownloadURL(ctx context.Context, userID uint, userFileI
 			}
 			return DownloadFileResp{}, errors.WithMessage(err, "获取文件失败")
 		}
-		fileMeta = &cache.UserFileMeta{
+		fileMeta = &cache.DownloadFileMeta{
 			FileStoreID: file.ID,
 			FileName:    fileName,
 			FileSize:    file.FileSize,
 			FileAddr:    file.FileAddr,
 		}
-		if err := s.fileCache.SetUserFileMeta(ctx, userID, userFileID, *fileMeta); err != nil {
-			logger.S.Warnf("写入文件元数据缓存失败:%v", err)
+		if err := s.fileCache.SetDownloadFileMeta(ctx, userID, userFileID, *fileMeta); err != nil {
+			logger.S.Warnf("写入下载文件元数据缓存失败:%v", err)
 		}
 	}
 	//检查用户会员状态

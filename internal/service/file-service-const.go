@@ -18,6 +18,9 @@ const (
 	uploadRateLimitTTL              = 10 * time.Minute
 	uploadCompleteLockTTL           = 30 * time.Second
 	uploadCompleteLockMaxRefresh    = 2 * time.Minute
+	cacheRebuildLockTTL             = 3 * time.Second
+	cacheRebuildWait                = 50 * time.Millisecond
+	cacheRebuildRetry               = 10
 	maxPendingUploadSessionsPerUser = 10
 
 	// 限流参数

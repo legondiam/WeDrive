@@ -91,6 +91,8 @@ func (h *ShareHandler) GetShareDownloadURL(c *gin.Context) {
 		response.BusinessError(c, response.CodeShareExpired, "分享已过期")
 	case errors.Is(err, service.ErrShareInvalidKey):
 		response.BusinessError(c, response.CodeShareInvalidKey, "密钥不正确")
+	case errors.Is(err, service.ErrCacheRebuilding):
+		response.BusinessError(c, response.CodeInvalidParam, "缓存重建中，请稍后重试")
 	default:
 		response.ServerError(c, "获取分享文件下载URL失败")
 		logger.S.Errorf("获取分享文件下载URL失败：%v", err)

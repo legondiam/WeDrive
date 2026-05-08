@@ -35,7 +35,7 @@ func BuildApp(db *gorm.DB, redis2 *redis.Client, minio2 *minio.Client) *gin.Engi
 	fileHandler := api.NewFileHandler(fileService)
 	shareRepo := repository.NewShareRepo(db)
 	shareCacheRepo := repository.NewShareCacheRepo(redis2)
-	shareService := service.NewShareService(shareRepo, shareCacheRepo, fileRepo, storage)
+	shareService := service.NewShareService(shareRepo, shareCacheRepo, fileRepo, rateLimiter, storage)
 	shareHandler := api.NewShareHandler(shareService)
 	engine := router.NewRouter(userHandler, fileHandler, shareHandler)
 	return engine

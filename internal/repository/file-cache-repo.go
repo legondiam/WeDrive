@@ -53,24 +53,24 @@ func (r *FileCacheRepo) DeleteRecycleBinList(ctx context.Context, userID uint) e
 	return cache.Delete(ctx, r.client, cache.RecycleBinListKey(userID))
 }
 
-// SetUserFileMeta 缓存用户文件下载所需的元数据
-func (r *FileCacheRepo) SetUserFileMeta(ctx context.Context, userID uint, userFileID uint, meta cache.UserFileMeta) error {
-	return cache.SetJSON(ctx, r.client, cache.UserFileMetaKey(userID, userFileID), meta, cache.FileMetaTTL)
+// SetDownloadFileMeta 缓存生成下载URL所需的文件池元数据
+func (r *FileCacheRepo) SetDownloadFileMeta(ctx context.Context, userID uint, userFileID uint, meta cache.DownloadFileMeta) error {
+	return cache.SetJSON(ctx, r.client, cache.DownloadFileMetaKey(userID, userFileID), meta, cache.FileMetaTTL)
 }
 
-// GetUserFileMeta 获取用户文件下载所需的元数据缓存
-func (r *FileCacheRepo) GetUserFileMeta(ctx context.Context, userID uint, userFileID uint) (*cache.UserFileMeta, bool, error) {
-	var meta cache.UserFileMeta
-	ok, err := cache.GetJSON(ctx, r.client, cache.UserFileMetaKey(userID, userFileID), &meta)
+// GetDownloadFileMeta 获取生成下载URL所需的文件池元数据缓存
+func (r *FileCacheRepo) GetDownloadFileMeta(ctx context.Context, userID uint, userFileID uint) (*cache.DownloadFileMeta, bool, error) {
+	var meta cache.DownloadFileMeta
+	ok, err := cache.GetJSON(ctx, r.client, cache.DownloadFileMetaKey(userID, userFileID), &meta)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
 	return &meta, true, nil
 }
 
-// DeleteUserFileMeta 删除用户文件下载元数据缓存
-func (r *FileCacheRepo) DeleteUserFileMeta(ctx context.Context, userID uint, userFileID uint) error {
-	return cache.Delete(ctx, r.client, cache.UserFileMetaKey(userID, userFileID))
+// DeleteDownloadFileMeta 删除生成下载URL所需的文件池元数据缓存
+func (r *FileCacheRepo) DeleteDownloadFileMeta(ctx context.Context, userID uint, userFileID uint) error {
+	return cache.Delete(ctx, r.client, cache.DownloadFileMetaKey(userID, userFileID))
 }
 
 // SetFileIdentity 缓存文件池身份信息

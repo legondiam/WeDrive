@@ -16,7 +16,7 @@ func RecycleBinListKey(userID uint) string {
 	return fmt.Sprintf("%s:user:recycle:list:%d", keyPrefix, userID)
 }
 
-func UserFileMetaKey(userID uint, userFileID uint) string {
+func DownloadFileMetaKey(userID uint, userFileID uint) string {
 	return fmt.Sprintf("%s:user:file:meta:%d:%d", keyPrefix, userID, userFileID)
 }
 

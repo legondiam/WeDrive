@@ -28,7 +28,7 @@ type RecycleFileListItem struct {
 	DeletedAt string `json:"deleted_at"`
 }
 
-type UserFileMeta struct {
+type DownloadFileMeta struct {
 	FileStoreID uint   `json:"file_store_id"`
 	FileName    string `json:"file_name"`
 	FileSize    int64  `json:"file_size"`
