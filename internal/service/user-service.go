@@ -170,12 +170,15 @@ func (s *UserService) UpdateUserMember(ctx context.Context, userID uint, memberL
 		baseTime = *user.VipExpireAt
 	}
 	vipExpireAt := baseTime.AddDate(0, vipMonths, 0)
-	if err = s.userRepo.UpdateUserMember(ctx, userID, memberLevel, &vipExpireAt); err != nil {
-		return errors.WithMessage(err, "更新用户会员状态失败")
-	}
 	if err := s.usercacheRepo.DeleteUserInfo(ctx, userID); err != nil {
 		logger.S.Warnf("删除用户信息缓存失败:%v", err)
 	}
+	if err = s.userRepo.UpdateUserMember(ctx, userID, memberLevel, &vipExpireAt); err != nil {
+		return errors.WithMessage(err, "更新用户会员状态失败")
+	}
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		return s.usercacheRepo.DeleteUserInfo(ctx, userID)
+	})
 	return nil
 }
 

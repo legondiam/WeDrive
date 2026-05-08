@@ -1,4 +1,4 @@
-﻿package service
+package service
 
 import (
 	"WeDrive/internal/cache"
@@ -640,6 +640,9 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 		return 0, errors.WithMessage(err, "完成对象分块上传失败")
 	}
 
+	s.deleteUserInfoCache(ctx, userID)
+	s.deleteUserFileListCache(ctx, userID, session.ParentID)
+
 	keepMinioObject := false
 	defer func() {
 		if !keepMinioObject {
@@ -740,8 +743,12 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	}
 
 	logger.S.Infof("直传分块上传完成, uploadID: %d, hashType: %s, fileHash: %s, userID: %d", sessionID, session.HashType, session.FileHash, userID)
-	s.deleteUserInfoCache(ctx, userID)
-	s.deleteUserFileListCache(ctx, userID, session.ParentID)
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		return s.userCache.DeleteUserInfo(ctx, userID)
+	})
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		return s.fileCache.DeleteUserFileList(ctx, userID, session.ParentID)
+	})
 	return uploadedID, nil
 }
 
@@ -950,6 +957,10 @@ func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID u
 	if prepareState.ParentID != parentID || prepareState.HashType != hashType || prepareState.FileHash != fileHash {
 		return 0, ErrInstantPrepareInvalid
 	}
+	//第一次删缓存
+	s.deleteUserInfoCache(ctx, userID)
+	s.deleteUserFileListCache(ctx, userID, parentID)
+
 	var uploadedID uint
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		//加锁读取文件存储记录，避免并发修改影响秒传
@@ -985,8 +996,13 @@ func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID u
 	}
 
 	logger.S.Infof("前端秒传确认成功, hashType: %s, fileHash: %s, userID: %d, parentID: %d", hashType, fileHash, userID, parentID)
-	s.deleteUserInfoCache(ctx, userID)
-	s.deleteUserFileListCache(ctx, userID, parentID)
+	//延迟删除
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		return s.userCache.DeleteUserInfo(ctx, userID)
+	})
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		return s.fileCache.DeleteUserFileList(ctx, userID, parentID)
+	})
 	return uploadedID, nil
 }
 
@@ -1019,6 +1035,8 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	// 去重上传成功
 	if err == nil {
 		var uploadedID uint
+		s.deleteUserInfoCache(ctx, userID)
+		s.deleteUserFileListCache(ctx, userID, parentID)
 		err = s.db.Transaction(func(tx *gorm.DB) error {
 			lockedStore, lockErr := s.fileRepo.GetFileByIdentityForUpdate(ctx, hashTypeFullSHA256, fileHash, tx)
 			if lockErr != nil {
@@ -1033,8 +1051,12 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		if !errors.Is(err, ErrInstantUploadUnavailable) {
 			logger.S.Infof("去重上传成功, fileHash: %s, userID: %d, parentID: %d", fileHash, userID, parentID)
 			if err == nil {
-				s.deleteUserInfoCache(ctx, userID)
-				s.deleteUserFileListCache(ctx, userID, parentID)
+				cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+					return s.userCache.DeleteUserInfo(ctx, userID)
+				})
+				cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+					return s.fileCache.DeleteUserFileList(ctx, userID, parentID)
+				})
 			}
 			return uploadedID, err
 		}
@@ -1067,6 +1089,8 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	}()
 	// 开启数据库事务
 	var uploadedID uint
+	s.deleteUserInfoCache(ctx, userID)
+	s.deleteUserFileListCache(ctx, userID, parentID)
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		// 插入文件元数据
 		newFileStore := &model.FileStore{
@@ -1104,8 +1128,12 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		return nil
 	})
 	if err == nil {
-		s.deleteUserInfoCache(ctx, userID)
-		s.deleteUserFileListCache(ctx, userID, parentID)
+		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+			return s.userCache.DeleteUserInfo(ctx, userID)
+		})
+		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+			return s.fileCache.DeleteUserFileList(ctx, userID, parentID)
+		})
 	}
 	return uploadedID, err
 }
@@ -1132,6 +1160,7 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 		if err != nil {
 			return errors.WithMessage(err, "收集子树ID失败")
 		}
+		s.deleteUserFileListCache(ctx, userID, root.ParentID)
 		// 删除子文件
 		err = s.fileRepo.DeleteUserFileByIDs(ctx, userID, ids)
 		if err != nil {
@@ -1140,13 +1169,16 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 			}
 			return errors.WithMessage(err, "删除子文件失败")
 		}
-		s.deleteUserFileListCache(ctx, userID, root.ParentID)
+		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+			return s.fileCache.DeleteUserFileList(ctx, userID, root.ParentID)
+		})
 		if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 			logger.S.Warnf("删除回收站缓存失败:%v", err)
 		}
 		return nil
 	}
 	// 删除文件
+	s.deleteUserFileListCache(ctx, userID, root.ParentID)
 	err = s.fileRepo.DeleteUserFile(ctx, userID, userFileID)
 	if err != nil {
 		if errors.Is(repository.ErrFileNotFound, err) {
@@ -1154,7 +1186,9 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 		}
 		return errors.WithMessage(err, "删除文件失败")
 	}
-	s.deleteUserFileListCache(ctx, userID, root.ParentID)
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		return s.fileCache.DeleteUserFileList(ctx, userID, root.ParentID)
+	})
 	if err := s.fileCache.DeleteUserFileMeta(ctx, userID, userFileID); err != nil {
 		logger.S.Warnf("删除文件元数据缓存失败:%v", err)
 	}
@@ -1198,6 +1232,11 @@ func (s *FileService) BatchDeleteFile(ctx context.Context, userID uint, userFile
 		}
 	}
 
+	//第一次删缓存
+	for parentID := range parentIDs {
+		s.deleteUserFileListCache(ctx, userID, parentID)
+	}
+
 	err := s.fileRepo.DeleteUserFileByIDs(ctx, userID, ids)
 	if err != nil {
 		if errors.Is(repository.ErrFileNotFound, err) {
@@ -1206,8 +1245,11 @@ func (s *FileService) BatchDeleteFile(ctx context.Context, userID uint, userFile
 		return errors.WithMessage(err, "批量删除文件失败")
 	}
 
+	//延迟删除
 	for parentID := range parentIDs {
-		s.deleteUserFileListCache(ctx, userID, parentID)
+		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+			return s.fileCache.DeleteUserFileList(ctx, userID, parentID)
+		})
 	}
 	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 		logger.S.Warnf("删除回收站缓存失败:%v", err)
@@ -1303,11 +1345,14 @@ func (s *FileService) CreateFolder(ctx context.Context, userID uint, parentID ui
 	}
 
 	// 写入目录记录
+	s.deleteUserFileListCache(ctx, userID, parentID)
 	if err := s.fileRepo.CreateUserFile(ctx, newFolder); err != nil {
 		return errors.WithMessage(err, "创建文件夹失败")
 	}
 
-	s.deleteUserFileListCache(ctx, userID, parentID)
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		return s.fileCache.DeleteUserFileList(ctx, userID, parentID)
+	})
 	return nil
 }
 
@@ -1382,6 +1427,9 @@ func (s *FileService) RestoreUserFile(ctx context.Context, userID uint, ID uint)
 	if loadErr != nil && !errors.Is(loadErr, gorm.ErrRecordNotFound) {
 		return errors.WithMessage(loadErr, "查询回收站文件失败")
 	}
+	if loadErr == nil {
+		s.deleteUserFileListCache(ctx, userID, file.ParentID)
+	}
 	err := s.fileRepo.RestoreUserFile(ctx, userID, ID)
 	if err != nil {
 		if errors.Is(repository.ErrFileNotFound, err) {
@@ -1390,7 +1438,9 @@ func (s *FileService) RestoreUserFile(ctx context.Context, userID uint, ID uint)
 		return errors.WithMessage(err, "恢复文件失败")
 	}
 	if loadErr == nil {
-		s.deleteUserFileListCache(ctx, userID, file.ParentID)
+		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+			return s.fileCache.DeleteUserFileList(ctx, userID, file.ParentID)
+		})
 	}
 	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 		logger.S.Warnf("删除回收站缓存失败:%v", err)
@@ -1426,13 +1476,14 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 	objectName := file.FileStore.FileAddr
 
 	// 开启事务:删除用户文件记录、扣减用户空间、检查剩余引用并删除文件池记录
+	s.deleteUserInfoCache(ctx, userID)
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		// 永久删除用户文件记录
 		if err := s.fileRepo.HardDeleteUserFile(ctx, userID, userFileID, tx); err != nil {
 			return errors.WithMessage(err, "永久删除用户文件失败")
 		}
 
-		// 扣减用户空间
+		// 更新用户空间
 		if err := s.userRepo.UpdateUserSpace(ctx, userID, -fileSize, tx); err != nil {
 			return errors.WithMessage(err, "更新用户空间失败")
 		}
@@ -1460,7 +1511,9 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 	if err != nil {
 		return err
 	}
-	s.deleteUserInfoCache(ctx, userID)
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		return s.userCache.DeleteUserInfo(ctx, userID)
+	})
 	if err := s.fileCache.DeleteUserFileMeta(ctx, userID, userFileID); err != nil {
 		logger.S.Warnf("删除文件元数据缓存失败:%v", err)
 	}
