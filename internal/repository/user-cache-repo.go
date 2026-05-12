@@ -69,7 +69,7 @@ func (c *UserCacheRepo) SetUserInfo(ctx context.Context, user cache.UserInfo) er
 		"member_level":  strconv.FormatInt(int64(user.MemberLevel), 10),
 		"vip_expire_at": vipExpireAt,
 	})
-	pipe.Expire(ctx, key, cache.UserInfoTTL)
+	pipe.Expire(ctx, key, cache.JitterTTL(cache.UserInfoTTL))
 	if _, err := pipe.Exec(ctx); err != nil {
 		return errors.WithStack(err)
 	}

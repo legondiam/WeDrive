@@ -21,7 +21,7 @@ func NewFileCacheRepo(client *redis.Client) *FileCacheRepo {
 
 // SetUserFileList 缓存用户指定目录下的文件列表
 func (r *FileCacheRepo) SetUserFileList(ctx context.Context, userID uint, parentID uint, list []cache.FileListItem) error {
-	return cache.SetJSON(ctx, r.client, cache.UserFileListKey(userID, parentID), list, cache.FileListTTL)
+	return cache.SetJSON(ctx, r.client, cache.UserFileListKey(userID, parentID), list, cache.JitterTTL(cache.FileListTTL))
 }
 
 // GetUserFileList 获取用户指定目录下的文件列表缓存
@@ -38,7 +38,7 @@ func (r *FileCacheRepo) DeleteUserFileList(ctx context.Context, userID uint, par
 
 // SetRecycleBinList 缓存用户回收站文件列表
 func (r *FileCacheRepo) SetRecycleBinList(ctx context.Context, userID uint, list []cache.RecycleFileListItem) error {
-	return cache.SetJSON(ctx, r.client, cache.RecycleBinListKey(userID), list, cache.FileListTTL)
+	return cache.SetJSON(ctx, r.client, cache.RecycleBinListKey(userID), list, cache.JitterTTL(cache.FileListTTL))
 }
 
 // GetRecycleBinList 获取用户回收站文件列表缓存
@@ -55,7 +55,7 @@ func (r *FileCacheRepo) DeleteRecycleBinList(ctx context.Context, userID uint) e
 
 // SetDownloadFileMeta 缓存生成下载URL所需的文件池元数据
 func (r *FileCacheRepo) SetDownloadFileMeta(ctx context.Context, userID uint, userFileID uint, meta cache.DownloadFileMeta) error {
-	return cache.SetJSON(ctx, r.client, cache.DownloadFileMetaKey(userID, userFileID), meta, cache.FileMetaTTL)
+	return cache.SetJSON(ctx, r.client, cache.DownloadFileMetaKey(userID, userFileID), meta, cache.JitterTTL(cache.FileMetaTTL))
 }
 
 // GetDownloadFileMeta 获取生成下载URL所需的文件池元数据缓存
@@ -75,7 +75,7 @@ func (r *FileCacheRepo) DeleteDownloadFileMeta(ctx context.Context, userID uint,
 
 // SetFileIdentity 缓存文件池身份信息
 func (r *FileCacheRepo) SetFileIdentity(ctx context.Context, file *model.FileStore) error {
-	return cache.SetJSON(ctx, r.client, cache.FileIdentityKey(file.HashType, file.FileHash), fileIdentityFromModel(file), cache.FileIdentityTTL)
+	return cache.SetJSON(ctx, r.client, cache.FileIdentityKey(file.HashType, file.FileHash), fileIdentityFromModel(file), cache.JitterTTL(cache.FileIdentityTTL))
 }
 
 // GetFileIdentity 根据哈希身份获取文件池身份缓存
@@ -99,7 +99,7 @@ func (r *FileCacheRepo) SetFileSample(ctx context.Context, fileSize int64, headH
 	if exists {
 		value = "1"
 	}
-	if err := r.client.Set(ctx, cache.FileSampleKey(fileSize, headHash, midHash, tailHash), value, cache.FileSampleTTL).Err(); err != nil {
+	if err := r.client.Set(ctx, cache.FileSampleKey(fileSize, headHash, midHash, tailHash), value, cache.JitterTTL(cache.FileSampleTTL)).Err(); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil

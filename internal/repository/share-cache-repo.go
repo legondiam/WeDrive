@@ -23,9 +23,9 @@ func (r *ShareCacheRepo) SetShareToken(ctx context.Context, item cache.ShareToke
 		if remaining <= 0 {
 			return nil
 		}
-		if remaining < expire {
-			expire = remaining
-		}
+		expire = cache.JitterTTLWithin(expire, remaining)
+	} else {
+		expire = cache.JitterTTL(expire)
 	}
 	return cache.SetJSON(ctx, r.client, cache.ShareTokenKey(item.ShareToken), item, expire)
 }
