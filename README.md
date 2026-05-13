@@ -1,6 +1,6 @@
 # WeDrive
 
-WeDrive 是一个前后端分离的个人网盘项目。后端使用 Go/Gin/GORM，文件对象存储在 MinIO，MySQL 保存业务元数据，Redis 保存上传过程中的临时状态；前端使用 Vue 3 + Vite + Pinia + FilePond 实现文件管理、上传、回收站和分享下载。
+WeDrive 是一个前后端分离的个人网盘项目。后端使用 Go/Gin/GORM，文件对象存储在 MinIO，MySQL 保存业务元数据，Redis 保存上传过程中的临时状态，并承接用户信息、目录列表、分享 token、下载元数据等业务缓存；前端使用 Vue 3 + Vite + Pinia + FilePond 实现文件管理、上传、回收站和分享下载。
 
 这个项目的重点不是简单 CRUD，而是围绕“文件上传链路”做了分层秒传、对象存储直传、分块续传、文件池去重和用户空间一致性处理。
 
@@ -12,7 +12,7 @@ WeDrive 是一个前后端分离的个人网盘项目。后端使用 Go/Gin/GORM
 
 - Go、Gin、GORM
 - MySQL：用户、文件池、用户文件、上传会话、分享记录等业务数据
-- Redis：秒传挑战会话、分块上传 ETag/Hash 临时状态
+- Redis：秒传挑战会话、分块上传 ETag/Hash 临时状态，以及用户信息、目录列表、分享 token、下载元数据等业务缓存
 - MinIO：对象存储、预签名下载、预签名分块上传
 - JWT：Access Token / Refresh Token 鉴权
 
@@ -166,6 +166,52 @@ user_files：用户视角文件，保存 user_id、parent_id、file_name、file_
 
 ---
 
+### 5. Redis 缓存链路与一致性策略
+
+项目中的 Redis 不只保存上传过程中的临时状态，也承接了一层业务缓存，用来降低热点读请求对 MySQL 的压力。当前已经落地的缓存主要包括：
+
+- `user:info:{userID}`：用户信息
+- `user:file:list:{userID}:{parentID}`：目录文件列表
+- `user:recycle:list:{userID}`：回收站列表
+- `user:file:meta:{userID}:{userFileID}`：生成下载 URL 所需的下载元数据
+- `file:identity:{hashType}:{fileHash}`：文件池身份信息
+- `file:sample:{fileSize}:{head}:{mid}:{tail}`：抽样 hash 是否命中文件池
+- `share:token:{token}`：分享 token 对应的分享记录
+
+这些缓存没有一股脑都用 JSON。项目按数据形态选择了不同结构：
+
+- `user:info` 使用 Redis Hash，避免每次读取都做整块 JSON 反序列化。
+- `file:sample` 使用 String，仅保存 `"1"` / `"0"`，用于快速判断抽样命中结果。
+- 列表、分享记录、下载元数据、文件身份信息等结构化对象继续使用 JSON，优先保持实现简单和业务可读性。
+
+读链路采用的是典型 cache-aside：
+
+```text
+先查 Redis
+命中直接返回
+未命中再查 MySQL
+查到结果后回写缓存
+```
+
+写链路上，当前重点处理了 `user:info` 和 `user:file:list` 这两类高频缓存的一致性问题。涉及用户空间变更、目录内容变更的操作，会采用：
+
+```text
+先删缓存
+再写数据库
+事务成功后延迟再次删缓存
+```
+
+第一次删除用于尽量避免脏读，第二次延迟删除用于覆盖“写库后刚好有请求回填旧缓存”的窗口期。删除失败不会阻断主流程，但会记录日志。
+
+针对缓存异常场景，项目当前也做了两层防护：
+
+- **缓存击穿**：分享下载的 `share:token:{token}` 在缓存未命中时会使用 Redis 分布式锁做缓存重建互斥，避免热点分享链接过期瞬间大量请求同时打到数据库。
+- **缓存雪崩**：业务缓存写入时统一增加 TTL 抖动，不再让同一类 key 在固定时间点批量失效；分享 token 的 TTL 抖动还会额外受分享剩余有效期约束，保证缓存时间不会超过分享本身过期时间。
+
+这套缓存设计的目标很明确：上传状态缓存追求短生命周期和高频更新，业务缓存追求降低读压力和控制一致性窗口，两者职责分离。
+
+---
+
 ## 功能概览
 
 | 模块 | 能力 |
@@ -232,6 +278,7 @@ cmd/                    启动入口
 config/                 配置文件
 internal/api/           HTTP handler
 internal/app/           依赖组装和应用启动
+internal/cache/         缓存 key、TTL、DTO、失效策略等定义
 internal/initialize/    MySQL、Redis、MinIO 初始化
 internal/middleware/    JWT、超时、管理员中间件
 internal/model/         GORM 模型

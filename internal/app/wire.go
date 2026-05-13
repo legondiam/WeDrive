@@ -5,6 +5,7 @@ package app
 
 import (
 	"WeDrive/internal/api"
+	"WeDrive/internal/mq"
 	"WeDrive/internal/oss"
 	"WeDrive/internal/ratelimit"
 	"WeDrive/internal/repository"
@@ -14,13 +15,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/wire"
 	"github.com/minio/minio-go/v7"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
-func BuildApp(db *gorm.DB, redis *redis.Client, minio *minio.Client) *gin.Engine {
+func BuildApp(db *gorm.DB, redis *redis.Client, minio *minio.Client, mqConn *amqp.Connection) *gin.Engine {
 	// wire 会自动分析依赖顺序：db -> Repo -> Service -> Handler -> Router
 	wire.Build(
+		mq.NewCacheInvalidationPublisher,
 		repository.NewUserRepo,
 		repository.NewUserCacheRepo,
 		repository.NewFileRepo,

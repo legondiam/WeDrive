@@ -23,6 +23,13 @@ type RedisConf struct {
 	Port     int    `mapstructure:"port"`
 	Password string `mapstructure:"password"`
 }
+type RabbitMQConf struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	User     string `mapstructure:"user"`
+	Password string `mapstructure:"password"`
+	Vhost    string `mapstructure:"vhost"`
+}
 type DbConf struct {
 	Mysql MysqlConf `mapstructure:"mysql"`
 	Redis RedisConf `mapstructure:"redis"`
@@ -67,6 +74,7 @@ type Conf struct {
 	DB            DbConf            `mapstructure:"database"`
 	Jwt           JwtConf           `mapstructure:"jwt"`
 	Minio         MinioConf         `mapstructure:"minio"`
+	RabbitMQ      RabbitMQConf      `mapstructure:"rabbitmq"`
 	Download      DownloadConf      `mapstructure:"download"`
 	Admin         AdminConf         `mapstructure:"admin"`
 	Cookie        CookieConf        `mapstructure:"cookie"`
@@ -95,6 +103,7 @@ func Init() error {
 	// 显式绑定关键密钥
 	viper.MustBindEnv("database.mysql.password", "DATABASE_MYSQL_PASSWORD")
 	viper.MustBindEnv("database.redis.password", "DATABASE_REDIS_PASSWORD")
+	viper.MustBindEnv("rabbitmq.password", "RABBITMQ_PASSWORD")
 	viper.MustBindEnv("minio.access_key", "MINIO_ACCESS_KEY")
 	viper.MustBindEnv("minio.secret_key", "MINIO_SECRET_KEY")
 	viper.MustBindEnv("jwt.SecretKey", "JWT_SECRET_KEY")
@@ -125,6 +134,9 @@ func isProd() bool {
 func validateSecrets(c Conf) error {
 	if c.DB.Mysql.Password == "" {
 		return errors.New("缺少 DATABASE_MYSQL_PASSWORD")
+	}
+	if c.RabbitMQ.Password == "" {
+		return errors.New("缺少 RABBITMQ_PASSWORD")
 	}
 	if c.Minio.AccessKey == "" || c.Minio.SecretKey == "" {
 		return errors.New("缺少 MINIO_ACCESS_KEY / MINIO_SECRET_KEY")

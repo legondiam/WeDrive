@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/minio/minio-go/v7"
 	"github.com/pkg/errors"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -15,6 +16,7 @@ type App struct {
 	db     *gorm.DB
 	redis  *redis.Client
 	minio  *minio.Client
+	mq     *amqp.Connection
 }
 
 func Init() (*App, error) {
@@ -30,12 +32,17 @@ func Init() (*App, error) {
 	if err != nil {
 		return nil, errors.WithMessage(err, "minio初始化失败")
 	}
-	engine := BuildApp(db, redisClient, minioClient)
+	mqConn, err := initialize.RabbitMQInit()
+	if err != nil {
+		return nil, errors.WithMessage(err, "rabbitmq初始化失败")
+	}
+	engine := BuildApp(db, redisClient, minioClient, mqConn)
 	return &App{
 		Engine: engine,
 		db:     db,
 		redis:  redisClient,
 		minio:  minioClient,
+		mq:     mqConn,
 	}, nil
 }
 
@@ -43,5 +50,22 @@ func (a *App) StartBackgroundJobs() {
 	if a == nil {
 		return
 	}
-	startBackgroundJobs(a.db, a.redis, a.minio)
+	startBackgroundJobs(a.db, a.redis, a.minio, a.mq)
+}
+
+func (a *App) Close() {
+	if a == nil {
+		return
+	}
+	if a.mq != nil {
+		_ = a.mq.Close()
+	}
+	if a.redis != nil {
+		_ = a.redis.Close()
+	}
+	if a.db != nil {
+		if db, err := a.db.DB(); err == nil {
+			_ = db.Close()
+		}
+	}
 }

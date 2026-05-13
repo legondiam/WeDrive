@@ -3,6 +3,7 @@ package service
 import (
 	"WeDrive/internal/cache"
 	"WeDrive/internal/model"
+	"WeDrive/internal/mq"
 	"WeDrive/internal/repository"
 	"WeDrive/pkg/logger"
 	"WeDrive/pkg/utils/convert"
@@ -20,8 +21,9 @@ var ErrAccountOrPassword = errors.New("账号或密码错误")
 var ErrTokenNotFound = errors.New("token不存在")
 
 type UserService struct {
-	userRepo      *repository.UserRepo
-	usercacheRepo *repository.UserCacheRepo
+	userRepo       *repository.UserRepo
+	usercacheRepo  *repository.UserCacheRepo
+	cachePublisher *mq.CacheInvalidationPublisher
 }
 
 type UserInfoResp struct {
@@ -32,8 +34,8 @@ type UserInfoResp struct {
 	MemberStatus string
 }
 
-func NewUserService(userrepo *repository.UserRepo, usercacherepo *repository.UserCacheRepo) *UserService {
-	return &UserService{userRepo: userrepo, usercacheRepo: usercacherepo}
+func NewUserService(userrepo *repository.UserRepo, usercacherepo *repository.UserCacheRepo, cachePublisher *mq.CacheInvalidationPublisher) *UserService {
+	return &UserService{userRepo: userrepo, usercacheRepo: usercacherepo, cachePublisher: cachePublisher}
 }
 
 // Register 注册
@@ -177,7 +179,13 @@ func (s *UserService) UpdateUserMember(ctx context.Context, userID uint, memberL
 		return errors.WithMessage(err, "更新用户会员状态失败")
 	}
 	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-		return s.usercacheRepo.DeleteUserInfo(ctx, userID)
+		err := s.usercacheRepo.DeleteUserInfo(ctx, userID)
+		if err != nil && s.cachePublisher != nil {
+			if publishErr := s.cachePublisher.PublishUserInfoRetry(context.Background(), userID); publishErr != nil {
+				logger.S.Warnf("发送用户信息缓存删除重试消息失败:%v", publishErr)
+			}
+		}
+		return err
 	})
 	return nil
 }

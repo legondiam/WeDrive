@@ -3,6 +3,7 @@ package service
 import (
 	"WeDrive/internal/cache"
 	"WeDrive/internal/model"
+	"WeDrive/internal/mq"
 	"WeDrive/internal/oss"
 	"WeDrive/internal/ratelimit"
 	"WeDrive/internal/repository"
@@ -51,14 +52,15 @@ var ErrTooManyPendingUploads = errors.New("未完成上传任务过多")
 var ErrUploadSessionProcessing = errors.New("上传会话正在处理中")
 
 type FileService struct {
-	fileRepo    *repository.FileRepo
-	fileCache   *repository.FileCacheRepo
-	uploadCache *repository.UploadCacheRepo
-	rateLimiter *ratelimit.Limiter
-	userRepo    *repository.UserRepo
-	userCache   *repository.UserCacheRepo
-	storage     *oss.Storage
-	db          *gorm.DB
+	fileRepo       *repository.FileRepo
+	fileCache      *repository.FileCacheRepo
+	uploadCache    *repository.UploadCacheRepo
+	rateLimiter    *ratelimit.Limiter
+	userRepo       *repository.UserRepo
+	userCache      *repository.UserCacheRepo
+	storage        *oss.Storage
+	db             *gorm.DB
+	cachePublisher *mq.CacheInvalidationPublisher
 }
 
 type RecycleFileResp struct {
@@ -171,8 +173,8 @@ type instantPrepareState struct {
 	Challenges  []InstantUploadChallenge `json:"challenges"`
 }
 
-func NewFileService(fileRepo *repository.FileRepo, fileCache *repository.FileCacheRepo, uploadCache *repository.UploadCacheRepo, rateLimiter *ratelimit.Limiter, userRepo *repository.UserRepo, userCache *repository.UserCacheRepo, storage *oss.Storage, db *gorm.DB) *FileService {
-	return &FileService{fileRepo: fileRepo, fileCache: fileCache, uploadCache: uploadCache, rateLimiter: rateLimiter, storage: storage, db: db, userRepo: userRepo, userCache: userCache}
+func NewFileService(fileRepo *repository.FileRepo, fileCache *repository.FileCacheRepo, uploadCache *repository.UploadCacheRepo, rateLimiter *ratelimit.Limiter, userRepo *repository.UserRepo, userCache *repository.UserCacheRepo, storage *oss.Storage, db *gorm.DB, cachePublisher *mq.CacheInvalidationPublisher) *FileService {
+	return &FileService{fileRepo: fileRepo, fileCache: fileCache, uploadCache: uploadCache, rateLimiter: rateLimiter, storage: storage, db: db, userRepo: userRepo, userCache: userCache, cachePublisher: cachePublisher}
 }
 
 func (s *FileService) deleteUserInfoCache(ctx context.Context, userID uint) {
@@ -185,6 +187,18 @@ func (s *FileService) deleteUserFileListCache(ctx context.Context, userID uint, 
 	if err := s.fileCache.DeleteUserFileList(ctx, userID, parentID); err != nil {
 		logger.S.Warnf("删除文件列表缓存失败:%v", err)
 	}
+}
+
+func (s *FileService) delayedDeleteUserFileListCache(userID uint, parentID uint) {
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		err := s.fileCache.DeleteUserFileList(ctx, userID, parentID)
+		if err != nil && s.cachePublisher != nil {
+			if publishErr := s.cachePublisher.PublishFileListRetry(context.Background(), userID, parentID); publishErr != nil {
+				logger.S.Warnf("发送目录列表缓存删除重试消息失败:%v", publishErr)
+			}
+		}
+		return err
+	})
 }
 
 // allowRate 对service限流
@@ -747,9 +761,7 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
 		return s.userCache.DeleteUserInfo(ctx, userID)
 	})
-	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-		return s.fileCache.DeleteUserFileList(ctx, userID, session.ParentID)
-	})
+	s.delayedDeleteUserFileListCache(userID, session.ParentID)
 	return uploadedID, nil
 }
 
@@ -1001,9 +1013,7 @@ func (s *FileService) InstantUpload(ctx context.Context, userID uint, parentID u
 	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
 		return s.userCache.DeleteUserInfo(ctx, userID)
 	})
-	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-		return s.fileCache.DeleteUserFileList(ctx, userID, parentID)
-	})
+	s.delayedDeleteUserFileListCache(userID, parentID)
 	return uploadedID, nil
 }
 
@@ -1055,9 +1065,7 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 				cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
 					return s.userCache.DeleteUserInfo(ctx, userID)
 				})
-				cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-					return s.fileCache.DeleteUserFileList(ctx, userID, parentID)
-				})
+				s.delayedDeleteUserFileListCache(userID, parentID)
 			}
 			return uploadedID, err
 		}
@@ -1132,9 +1140,7 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
 			return s.userCache.DeleteUserInfo(ctx, userID)
 		})
-		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-			return s.fileCache.DeleteUserFileList(ctx, userID, parentID)
-		})
+		s.delayedDeleteUserFileListCache(userID, parentID)
 	}
 	return uploadedID, err
 }
@@ -1170,9 +1176,7 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 			}
 			return errors.WithMessage(err, "删除子文件失败")
 		}
-		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-			return s.fileCache.DeleteUserFileList(ctx, userID, root.ParentID)
-		})
+		s.delayedDeleteUserFileListCache(userID, root.ParentID)
 		if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 			logger.S.Warnf("删除回收站缓存失败:%v", err)
 		}
@@ -1187,9 +1191,7 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 		}
 		return errors.WithMessage(err, "删除文件失败")
 	}
-	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-		return s.fileCache.DeleteUserFileList(ctx, userID, root.ParentID)
-	})
+	s.delayedDeleteUserFileListCache(userID, root.ParentID)
 	if err := s.fileCache.DeleteDownloadFileMeta(ctx, userID, userFileID); err != nil {
 		logger.S.Warnf("删除下载文件元数据缓存失败:%v", err)
 	}
@@ -1248,9 +1250,7 @@ func (s *FileService) BatchDeleteFile(ctx context.Context, userID uint, userFile
 
 	//延迟删除
 	for parentID := range parentIDs {
-		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-			return s.fileCache.DeleteUserFileList(ctx, userID, parentID)
-		})
+		s.delayedDeleteUserFileListCache(userID, parentID)
 	}
 	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 		logger.S.Warnf("删除回收站缓存失败:%v", err)
@@ -1351,9 +1351,7 @@ func (s *FileService) CreateFolder(ctx context.Context, userID uint, parentID ui
 		return errors.WithMessage(err, "创建文件夹失败")
 	}
 
-	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-		return s.fileCache.DeleteUserFileList(ctx, userID, parentID)
-	})
+	s.delayedDeleteUserFileListCache(userID, parentID)
 	return nil
 }
 
@@ -1439,9 +1437,7 @@ func (s *FileService) RestoreUserFile(ctx context.Context, userID uint, ID uint)
 		return errors.WithMessage(err, "恢复文件失败")
 	}
 	if loadErr == nil {
-		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-			return s.fileCache.DeleteUserFileList(ctx, userID, file.ParentID)
-		})
+		s.delayedDeleteUserFileListCache(userID, file.ParentID)
 	}
 	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 		logger.S.Warnf("删除回收站缓存失败:%v", err)

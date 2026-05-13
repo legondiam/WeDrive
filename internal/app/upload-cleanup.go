@@ -2,6 +2,7 @@ package app
 
 import (
 	"WeDrive/internal/config"
+	"WeDrive/internal/mq"
 	"WeDrive/internal/oss"
 	"WeDrive/internal/ratelimit"
 	"WeDrive/internal/repository"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/minio/minio-go/v7"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -23,8 +25,19 @@ const (
 )
 
 // startBackgroundJobs 启动后台任务
-func startBackgroundJobs(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client) {
+func startBackgroundJobs(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client, mqConn *amqp.Connection) {
+	startCacheInvalidationConsumer(redisClient, mqConn)
 	startExpiredUploadCleanup(db, redisClient, minioClient)
+}
+
+func startCacheInvalidationConsumer(redisClient *redis.Client, mqConn *amqp.Connection) {
+	userCacheRepo := repository.NewUserCacheRepo(redisClient)
+	fileCacheRepo := repository.NewFileCacheRepo(redisClient)
+	if err := mq.StartCacheInvalidationConsumer(mqConn, userCacheRepo, fileCacheRepo); err != nil {
+		logger.S.Errorf("缓存失效消费者启动失败: %+v", err)
+		return
+	}
+	logger.S.Info("缓存失效消费者已启动")
 }
 
 // startExpiredUploadCleanup 启动僵尸分块定时清理任务。
@@ -54,7 +67,7 @@ func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, minioClie
 	userRepo := repository.NewUserRepo(db)
 	userCacheRepo := repository.NewUserCacheRepo(redisClient)
 	storage := oss.NewStorage(minioClient)
-	fileService := service.NewFileService(fileRepo, fileCacheRepo, uploadCacheRepo, rateLimiter, userRepo, userCacheRepo, storage, db)
+	fileService := service.NewFileService(fileRepo, fileCacheRepo, uploadCacheRepo, rateLimiter, userRepo, userCacheRepo, storage, db, nil)
 
 	go func() {
 		// 服务启动后先执行一轮，减少历史残留会话堆积时间。

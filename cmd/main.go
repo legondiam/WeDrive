@@ -21,6 +21,7 @@ func main() {
 		logger.S.Fatalf("依赖初始化失败:%+v", err)
 		return
 	}
+	defer application.Close()
 	application.StartBackgroundJobs()
 
 	logger.S.Info("服务启动成功")
