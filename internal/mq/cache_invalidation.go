@@ -21,6 +21,8 @@ const (
 	cacheInvalidationConsumerTag    = "wedrive-cache-invalidation"
 	cacheInvalidationTypeUserInfo   = "user_info"
 	cacheInvalidationTypeFileList   = "file_list"
+	cacheInvalidationTypeRecycle    = "recycle_list"
+	cacheInvalidationTypeFileMeta   = "file_meta"
 	cacheInvalidationContentType    = "application/json"
 	cacheInvalidationDeliveryMode   = amqp.Persistent
 	cacheInvalidationPrefetchCount  = 10
@@ -38,6 +40,7 @@ type CacheInvalidationMessage struct {
 	Type       string `json:"type"`
 	UserID     uint   `json:"user_id"`
 	ParentID   uint   `json:"parent_id,omitempty"`
+	UserFileID uint   `json:"user_file_id,omitempty"`
 	RetryCount int    `json:"retry_count"`
 }
 
@@ -64,7 +67,26 @@ func (p *CacheInvalidationPublisher) PublishFileListRetry(ctx context.Context, u
 	})
 }
 
-// publishRetry 发布缓存删除重试消息。
+// PublishRecycleListRetry 发布用户回收站列表缓存删除重试消息。
+func (p *CacheInvalidationPublisher) PublishRecycleListRetry(ctx context.Context, userID uint) error {
+	return p.publishRetry(ctx, CacheInvalidationMessage{
+		Type:       cacheInvalidationTypeRecycle,
+		UserID:     userID,
+		RetryCount: 1,
+	})
+}
+
+// PublishFileMetaRetry 发布下载文件元数据缓存删除重试消息。
+func (p *CacheInvalidationPublisher) PublishFileMetaRetry(ctx context.Context, userID uint, userFileID uint) error {
+	return p.publishRetry(ctx, CacheInvalidationMessage{
+		Type:       cacheInvalidationTypeFileMeta,
+		UserID:     userID,
+		UserFileID: userFileID,
+		RetryCount: 1,
+	})
+}
+
+// publishRetry 发布缓存删除重试消息
 func (p *CacheInvalidationPublisher) publishRetry(ctx context.Context, msg CacheInvalidationMessage) error {
 	if p == nil || p.conn == nil {
 		return errors.New("rabbitmq connection is nil")
@@ -82,11 +104,7 @@ func (p *CacheInvalidationPublisher) publishRetry(ctx context.Context, msg Cache
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	return publishCacheInvalidationRetry(ctx, ch, body)
-}
-
-// publishCacheInvalidationRetry 将缓存删除消息发送到延迟队列。
-func publishCacheInvalidationRetry(ctx context.Context, ch *amqp.Channel, body []byte) error {
+	//使用默认交换机，发送消息到延迟队列
 	return errors.WithStack(ch.PublishWithContext(ctx, "", cacheInvalidationDelayQueue, false, false, amqp.Publishing{
 		ContentType:  cacheInvalidationContentType,
 		DeliveryMode: cacheInvalidationDeliveryMode,
@@ -179,6 +197,7 @@ func handleCacheInvalidation(delivery amqp.Delivery, ch *amqp.Channel, userCache
 	}
 	if err := deleteCacheByMessage(context.Background(), msg, userCache, fileCache); err != nil {
 		logger.S.Warnf("MQ删除用户信息缓存失败:%v", err)
+		//重试次数超过限制后，投递死信队列
 		if msg.RetryCount >= cacheInvalidationMaxRetryCount {
 			if deadErr := publishCacheInvalidationDead(context.Background(), ch, delivery.Body); deadErr != nil {
 				logger.S.Warnf("投递缓存删除死信消息失败:%v", deadErr)
@@ -193,7 +212,12 @@ func handleCacheInvalidation(delivery amqp.Delivery, ch *amqp.Channel, userCache
 			_ = delivery.Ack(false)
 			return
 		}
-		if retryErr := publishCacheInvalidationRetry(context.Background(), ch, body); retryErr != nil {
+		if retryErr := ch.PublishWithContext(context.Background(), "", cacheInvalidationDelayQueue, false, false, amqp.Publishing{
+			ContentType:  cacheInvalidationContentType,
+			DeliveryMode: cacheInvalidationDeliveryMode,
+			Expiration:   strconv.FormatInt(cacheInvalidationRetryDelay.Milliseconds(), 10),
+			Body:         body,
+		}); retryErr != nil {
 			logger.S.Warnf("重新投递缓存删除重试消息失败:%v", retryErr)
 		}
 		_ = delivery.Ack(false)
@@ -210,7 +234,11 @@ func deleteCacheByMessage(ctx context.Context, msg CacheInvalidationMessage, use
 		return userCache.DeleteUserInfo(ctx, msg.UserID)
 	case cacheInvalidationTypeFileList:
 		return fileCache.DeleteUserFileList(ctx, msg.UserID, msg.ParentID)
+	case cacheInvalidationTypeRecycle:
+		return fileCache.DeleteRecycleBinList(ctx, msg.UserID)
+	case cacheInvalidationTypeFileMeta:
+		return fileCache.DeleteDownloadFileMeta(ctx, msg.UserID, msg.UserFileID)
 	default:
-		return errors.Errorf("unsupported cache invalidation type: %s", msg.Type)
+		return errors.Errorf("不支持的缓存失效类型: %s", msg.Type)
 	}
 }

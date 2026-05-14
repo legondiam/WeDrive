@@ -201,6 +201,30 @@ func (s *FileService) delayedDeleteUserFileListCache(userID uint, parentID uint)
 	})
 }
 
+func (s *FileService) delayedDeleteRecycleBinListCache(userID uint) {
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		err := s.fileCache.DeleteRecycleBinList(ctx, userID)
+		if err != nil && s.cachePublisher != nil {
+			if publishErr := s.cachePublisher.PublishRecycleListRetry(context.Background(), userID); publishErr != nil {
+				logger.S.Warnf("发送回收站列表缓存删除重试消息失败:%v", publishErr)
+			}
+		}
+		return err
+	})
+}
+
+func (s *FileService) delayedDeleteDownloadFileMetaCache(userID uint, userFileID uint) {
+	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
+		err := s.fileCache.DeleteDownloadFileMeta(ctx, userID, userFileID)
+		if err != nil && s.cachePublisher != nil {
+			if publishErr := s.cachePublisher.PublishFileMetaRetry(context.Background(), userID, userFileID); publishErr != nil {
+				logger.S.Warnf("发送下载文件元数据缓存删除重试消息失败:%v", publishErr)
+			}
+		}
+		return err
+	})
+}
+
 // allowRate 对service限流
 func (s *FileService) allowRate(ctx context.Context, key string, ratePerSecond float64, burst int) error {
 	allowed, err := s.rateLimiter.AllowTokenBucket(ctx, "rate_limit:"+key, ratePerSecond, burst, uploadRateLimitTTL)
@@ -1180,6 +1204,7 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 		if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 			logger.S.Warnf("删除回收站缓存失败:%v", err)
 		}
+		s.delayedDeleteRecycleBinListCache(userID)
 		return nil
 	}
 	// 删除文件
@@ -1195,9 +1220,11 @@ func (s *FileService) DeleteFile(ctx context.Context, userID uint, userFileID ui
 	if err := s.fileCache.DeleteDownloadFileMeta(ctx, userID, userFileID); err != nil {
 		logger.S.Warnf("删除下载文件元数据缓存失败:%v", err)
 	}
+	s.delayedDeleteDownloadFileMetaCache(userID, userFileID)
 	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 		logger.S.Warnf("删除回收站缓存失败:%v", err)
 	}
+	s.delayedDeleteRecycleBinListCache(userID)
 	return nil
 }
 
@@ -1255,6 +1282,7 @@ func (s *FileService) BatchDeleteFile(ctx context.Context, userID uint, userFile
 	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 		logger.S.Warnf("删除回收站缓存失败:%v", err)
 	}
+	s.delayedDeleteRecycleBinListCache(userID)
 	return nil
 }
 
@@ -1442,6 +1470,7 @@ func (s *FileService) RestoreUserFile(ctx context.Context, userID uint, ID uint)
 	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 		logger.S.Warnf("删除回收站缓存失败:%v", err)
 	}
+	s.delayedDeleteRecycleBinListCache(userID)
 	return nil
 }
 
@@ -1464,6 +1493,7 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 		if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 			logger.S.Warnf("删除回收站缓存失败:%v", err)
 		}
+		s.delayedDeleteRecycleBinListCache(userID)
 		return nil
 	}
 
@@ -1514,9 +1544,11 @@ func (s *FileService) PermanentlyDeleteFile(ctx context.Context, userID uint, us
 	if err := s.fileCache.DeleteDownloadFileMeta(ctx, userID, userFileID); err != nil {
 		logger.S.Warnf("删除下载文件元数据缓存失败:%v", err)
 	}
+	s.delayedDeleteDownloadFileMetaCache(userID, userFileID)
 	if err := s.fileCache.DeleteRecycleBinList(ctx, userID); err != nil {
 		logger.S.Warnf("删除回收站缓存失败:%v", err)
 	}
+	s.delayedDeleteRecycleBinListCache(userID)
 
 	// 事务提交后，若已无任何引用，则尝试删除 MinIO 对象
 	count, err := s.fileRepo.CountAllUserFileByStoreID(ctx, storeID)
