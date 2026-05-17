@@ -195,7 +195,10 @@ func declareCacheInvalidation(ch *amqp.Channel) error {
 		return errors.WithStack(err)
 	}
 	// 声明消费队列
-	if _, err := ch.QueueDeclare(cacheInvalidationQueue, true, false, false, false, nil); err != nil {
+	if _, err := ch.QueueDeclare(cacheInvalidationQueue, true, false, false, false, amqp.Table{
+		"x-dead-letter-exchange":    "",
+		"x-dead-letter-routing-key": cacheInvalidationDeadQueue,
+	}); err != nil {
 		return errors.WithStack(err)
 	}
 	// 声明死信队列
@@ -236,6 +239,8 @@ func handleCacheInvalidation(delivery amqp.Delivery, ch *amqp.Channel, confirms 
 		if msg.RetryCount >= cacheInvalidationMaxRetryCount {
 			if deadErr := publishCacheInvalidationDead(context.Background(), ch, confirms, delivery.Body); deadErr != nil {
 				logger.S.Warnf("投递缓存删除死信消息失败:%v", deadErr)
+				_ = delivery.Nack(false, false)
+				return
 			}
 			_ = delivery.Ack(false)
 			return
@@ -256,6 +261,8 @@ func handleCacheInvalidation(delivery amqp.Delivery, ch *amqp.Channel, confirms 
 			Body:         body,
 		}); retryErr != nil {
 			logger.S.Warnf("重新投递缓存删除重试消息失败:%v", retryErr)
+			_ = delivery.Nack(false, false)
+			return
 		}
 		_ = delivery.Ack(false)
 		return
