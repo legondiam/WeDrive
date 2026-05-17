@@ -30,6 +30,7 @@ const (
 	cacheInvalidationPrefetchGlobal = false
 	cacheInvalidationRetryDelay     = 5 * time.Second
 	cacheInvalidationMaxRetryCount  = 5
+	cacheInvalidationConfirmTimeout = 3 * time.Second
 )
 
 type CacheInvalidationPublisher struct {
@@ -100,26 +101,52 @@ func (p *CacheInvalidationPublisher) publishRetry(ctx context.Context, msg Cache
 	if err := declareCacheInvalidation(ch); err != nil {
 		return err
 	}
+	//启用确认模式
+	if err := ch.Confirm(false); err != nil {
+		return errors.WithStack(err)
+	}
+	//注册确认通知 channel
+	confirms := ch.NotifyPublish(make(chan amqp.Confirmation, 1))
 	body, err := json.Marshal(msg)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	//使用默认交换机，发送消息到延迟队列
-	return errors.WithStack(ch.PublishWithContext(ctx, "", cacheInvalidationDelayQueue, false, false, amqp.Publishing{
+	return publishWithConfirm(ctx, ch, confirms, "", cacheInvalidationDelayQueue, amqp.Publishing{
 		ContentType:  cacheInvalidationContentType,
 		DeliveryMode: cacheInvalidationDeliveryMode,
 		Expiration:   strconv.FormatInt(cacheInvalidationRetryDelay.Milliseconds(), 10),
 		Body:         body,
-	}))
+	})
 }
 
 // publishCacheInvalidationDead 将超过重试次数的缓存删除消息发送到死信队列。
-func publishCacheInvalidationDead(ctx context.Context, ch *amqp.Channel, body []byte) error {
-	return errors.WithStack(ch.PublishWithContext(ctx, "", cacheInvalidationDeadQueue, false, false, amqp.Publishing{
+func publishCacheInvalidationDead(ctx context.Context, ch *amqp.Channel, confirms <-chan amqp.Confirmation, body []byte) error {
+	return publishWithConfirm(ctx, ch, confirms, "", cacheInvalidationDeadQueue, amqp.Publishing{
 		ContentType:  cacheInvalidationContentType,
 		DeliveryMode: cacheInvalidationDeliveryMode,
 		Body:         body,
-	}))
+	})
+}
+
+// publishWithConfirm 发布消息并等待RabbitMQ确认。
+func publishWithConfirm(ctx context.Context, ch *amqp.Channel, confirms <-chan amqp.Confirmation, exchange string, key string, publishing amqp.Publishing) error {
+	confirmCtx, cancel := context.WithTimeout(ctx, cacheInvalidationConfirmTimeout)
+	defer cancel()
+
+	if err := ch.PublishWithContext(confirmCtx, exchange, key, false, false, publishing); err != nil {
+		return errors.WithStack(err)
+	}
+	//等待RabbitMQ确认
+	select {
+	case confirm := <-confirms:
+		if !confirm.Ack {
+			return errors.New("rabbitmq message not confirmed")
+		}
+		return nil
+	case <-confirmCtx.Done():
+		return errors.WithStack(confirmCtx.Err())
+	}
 }
 
 // StartCacheInvalidationConsumer 启动缓存失效消息消费者。
@@ -139,6 +166,13 @@ func StartCacheInvalidationConsumer(conn *amqp.Connection, userCache *repository
 		_ = ch.Close()
 		return errors.WithStack(err)
 	}
+	//启动确认模式
+	if err := ch.Confirm(false); err != nil {
+		_ = ch.Close()
+		return errors.WithStack(err)
+	}
+	confirms := ch.NotifyPublish(make(chan amqp.Confirmation, 1))
+	//注册消费者
 	deliveries, err := ch.Consume(cacheInvalidationQueue, cacheInvalidationConsumerTag, false, false, false, false, nil)
 	if err != nil {
 		_ = ch.Close()
@@ -148,7 +182,7 @@ func StartCacheInvalidationConsumer(conn *amqp.Connection, userCache *repository
 	go func() {
 		defer ch.Close()
 		for delivery := range deliveries {
-			handleCacheInvalidation(delivery, ch, userCache, fileCache)
+			handleCacheInvalidation(delivery, ch, confirms, userCache, fileCache)
 		}
 	}()
 	return nil
@@ -183,7 +217,7 @@ func declareCacheInvalidation(ch *amqp.Channel) error {
 }
 
 // handleCacheInvalidation 处理单条缓存失效消息。
-func handleCacheInvalidation(delivery amqp.Delivery, ch *amqp.Channel, userCache *repository.UserCacheRepo, fileCache *repository.FileCacheRepo) {
+func handleCacheInvalidation(delivery amqp.Delivery, ch *amqp.Channel, confirms <-chan amqp.Confirmation, userCache *repository.UserCacheRepo, fileCache *repository.FileCacheRepo) {
 	var msg CacheInvalidationMessage
 	if err := json.Unmarshal(delivery.Body, &msg); err != nil {
 		logger.S.Warnf("缓存失效消息解析失败:%v", err)
@@ -195,16 +229,18 @@ func handleCacheInvalidation(delivery amqp.Delivery, ch *amqp.Channel, userCache
 		_ = delivery.Ack(false)
 		return
 	}
+	//删除对应缓存
 	if err := deleteCacheByMessage(context.Background(), msg, userCache, fileCache); err != nil {
 		logger.S.Warnf("MQ删除用户信息缓存失败:%v", err)
 		//重试次数超过限制后，投递死信队列
 		if msg.RetryCount >= cacheInvalidationMaxRetryCount {
-			if deadErr := publishCacheInvalidationDead(context.Background(), ch, delivery.Body); deadErr != nil {
+			if deadErr := publishCacheInvalidationDead(context.Background(), ch, confirms, delivery.Body); deadErr != nil {
 				logger.S.Warnf("投递缓存删除死信消息失败:%v", deadErr)
 			}
 			_ = delivery.Ack(false)
 			return
 		}
+		//已重试次数加一
 		msg.RetryCount++
 		body, marshalErr := json.Marshal(msg)
 		if marshalErr != nil {
@@ -212,7 +248,8 @@ func handleCacheInvalidation(delivery amqp.Delivery, ch *amqp.Channel, userCache
 			_ = delivery.Ack(false)
 			return
 		}
-		if retryErr := ch.PublishWithContext(context.Background(), "", cacheInvalidationDelayQueue, false, false, amqp.Publishing{
+		//重试投递消息至延迟队列
+		if retryErr := publishWithConfirm(context.Background(), ch, confirms, "", cacheInvalidationDelayQueue, amqp.Publishing{
 			ContentType:  cacheInvalidationContentType,
 			DeliveryMode: cacheInvalidationDeliveryMode,
 			Expiration:   strconv.FormatInt(cacheInvalidationRetryDelay.Milliseconds(), 10),
