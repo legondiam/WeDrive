@@ -5,7 +5,9 @@ import "time"
 const (
 	// 上传状态常量
 	uploadSessionStatusPending   = "pending"
+	uploadSessionStatusVerifying = "verifying"
 	uploadSessionStatusCompleted = "completed"
+	uploadSessionStatusFailed    = "failed"
 
 	// 分块/秒传参数
 	hashTypeFullSHA256              = "full_sha256_v1"

@@ -73,12 +73,35 @@ func (r *FileRepo) GetUploadSessionByID(ctx context.Context, sessionID uint, use
 	return &session, errors.WithStack(err)
 }
 
+// GetUploadSessionByIDAnyUser 获取分块上传会话，不校验用户。
+func (r *FileRepo) GetUploadSessionByIDAnyUser(ctx context.Context, sessionID uint, tx ...*gorm.DB) (*model.UploadSession, error) {
+	db := r.db
+	if len(tx) > 0 && tx[0] != nil {
+		db = tx[0]
+	}
+	var session model.UploadSession
+	err := db.WithContext(ctx).
+		Where("id = ?", sessionID).
+		First(&session).Error
+	return &session, errors.WithStack(err)
+}
+
 // GetUploadSessionByIDForUpdate 获取分块上传会话并加锁
 func (r *FileRepo) GetUploadSessionByIDForUpdate(ctx context.Context, sessionID uint, userID uint, tx *gorm.DB) (*model.UploadSession, error) {
 	var session model.UploadSession
 	err := tx.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND user_id = ?", sessionID, userID).
+		First(&session).Error
+	return &session, errors.WithStack(err)
+}
+
+// GetUploadSessionByIDForUpdateAnyUser 获取分块上传会话并加锁，不校验用户。
+func (r *FileRepo) GetUploadSessionByIDForUpdateAnyUser(ctx context.Context, sessionID uint, tx *gorm.DB) (*model.UploadSession, error) {
+	var session model.UploadSession
+	err := tx.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", sessionID).
 		First(&session).Error
 	return &session, errors.WithStack(err)
 }

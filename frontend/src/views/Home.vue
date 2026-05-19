@@ -624,11 +624,11 @@ const filePondServer = {
             }
 
             const completeRes = await completeChunkUpload({ upload_id: uploadId })
-            return completeRes?.data?.id
+            return completeRes?.data
           }
-          const uploadedId = await uploadChunksWithResume()
-          if (finalized || !uploadedId) return
-          finishUpload(uploadedId, '上传成功')
+          const completeData = await uploadChunksWithResume()
+          if (finalized || !completeData) return
+          finishUpload(completeData.upload_id || uploadId, completeData.status === 'verifying' ? '上传完成，校验中' : '上传成功')
           return
         }
 

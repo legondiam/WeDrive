@@ -2,10 +2,13 @@ package oss
 
 import (
 	"WeDrive/internal/config"
+	hashutil "WeDrive/pkg/utils/hash"
 	"bytes"
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -166,6 +169,73 @@ func (s *Storage) ReadFileRange(ctx context.Context, objectName string, offset i
 		return nil, errors.WithStack(err)
 	}
 	return buf.Bytes(), nil
+}
+
+// HashObjectWithSamples 计算对象完整哈希与抽样哈希。
+func (s *Storage) HashObjectWithSamples(ctx context.Context, objectName string, size int64) (hashutil.FileHashes, int64, error) {
+	object, err := s.GetObject(ctx, objectName)
+	if err != nil {
+		return hashutil.FileHashes{}, 0, err
+	}
+	defer object.Close()
+
+	fullHash := sha256.New()
+	actualSize, err := io.Copy(fullHash, object)
+	if err != nil {
+		return hashutil.FileHashes{}, actualSize, errors.WithStack(err)
+	}
+
+	readSampleHash := func(offset int64) (string, error) {
+		if size == 0 {
+			return hashutil.HashBytesHex([]byte{}), nil
+		}
+		if offset < 0 {
+			offset = 0
+		}
+		if offset > size {
+			offset = size
+		}
+		length := int64(1 << 20)
+		if offset+length > size {
+			length = size - offset
+		}
+		if length == 0 {
+			return hashutil.HashBytesHex([]byte{}), nil
+		}
+		data, err := s.ReadFileRange(ctx, objectName, offset, length)
+		if err != nil {
+			return "", err
+		}
+		return hashutil.HashBytesHex(data), nil
+	}
+
+	headHash, err := readSampleHash(0)
+	if err != nil {
+		return hashutil.FileHashes{}, actualSize, err
+	}
+	midOffset := int64(0)
+	if size > int64(1<<20) {
+		midOffset = (size - int64(1<<20)) / 2
+	}
+	midHash, err := readSampleHash(midOffset)
+	if err != nil {
+		return hashutil.FileHashes{}, actualSize, err
+	}
+	tailOffset := int64(0)
+	if size > int64(1<<20) {
+		tailOffset = size - int64(1<<20)
+	}
+	tailHash, err := readSampleHash(tailOffset)
+	if err != nil {
+		return hashutil.FileHashes{}, actualSize, err
+	}
+
+	return hashutil.FileHashes{
+		Full: hex.EncodeToString(fullHash.Sum(nil)),
+		Head: headHash,
+		Mid:  midHash,
+		Tail: tailHash,
+	}, actualSize, nil
 }
 
 // DeleteFile 删除文件

@@ -1,6 +1,6 @@
 # WeDrive
 
-WeDrive 是一个前后端分离的个人网盘项目。后端使用 Go/Gin/GORM，文件对象存储在 MinIO，MySQL 保存业务元数据，Redis 保存上传过程中的临时状态，并承接用户信息、目录列表、分享 token、下载元数据等业务缓存；前端使用 Vue 3 + Vite + Pinia + FilePond 实现文件管理、上传、回收站和分享下载。
+WeDrive 是一个前后端分离的个人网盘项目。后端使用 Go/Gin/GORM，文件对象存储在 MinIO，MySQL 保存业务元数据，Redis 保存上传过程中的临时状态，并承接用户信息、目录列表、分享 token、下载元数据等业务缓存，RabbitMQ 承接缓存删除失败补偿和上传哈希校验等异步任务；前端使用 Vue 3 + Vite + Pinia + FilePond 实现文件管理、上传、回收站和分享下载。
 
 这个项目的重点不是简单 CRUD，而是围绕“文件上传链路”做了分层秒传、对象存储直传、分块续传、文件池去重和用户空间一致性处理。
 
@@ -13,6 +13,7 @@ WeDrive 是一个前后端分离的个人网盘项目。后端使用 Go/Gin/GORM
 - Go、Gin、GORM
 - MySQL：用户、文件池、用户文件、上传会话、分享记录等业务数据
 - Redis：秒传挑战会话、分块上传 ETag/Hash 临时状态，以及用户信息、目录列表、分享 token、下载元数据等业务缓存
+- RabbitMQ：缓存删除失败补偿、分块上传哈希异步校验
 - MinIO：对象存储、预签名下载、预签名分块上传
 - JWT：Access Token / Refresh Token 鉴权
 
@@ -129,12 +130,46 @@ InitChunkUpload
 - 前端上传成功后回报 ETag，Redis 记录已上传分块。
 - 重新初始化同一文件上传时，服务端返回已上传分块编号，前端跳过这些分块，实现断点续传。
 - `CompleteChunkUpload` 会检查 ETag 数量和顺序，最后调用 MinIO complete multipart upload。
+- MinIO 合并成功后，服务端不会直接信任前端上报的完整 hash，也不会立即创建 `file_stores` 和 `user_files`，而是把 `upload_sessions` 状态改为 `verifying`，再投递 RabbitMQ 上传校验消息。
+- 上传校验消费者会流式读取 MinIO 对象，重新计算完整 SHA-256 和 head/mid/tail 抽样 hash。校验通过后才创建 `file_stores` / `user_files` 并更新用户空间；校验失败时标记会话为 `failed`，删除 MinIO 对象和上传过程缓存。
 
-这条链路把大文件流量从业务服务中剥离出去，业务服务只负责签名、状态管理和最终一致性处理；分块内容校验交给对象存储 checksum，上传流量治理交给网关层。
+这条链路把大文件流量从业务服务中剥离出去，业务服务只负责签名、状态管理和最终一致性处理；分块内容校验先交给对象存储 checksum，文件身份校验再由服务端异步读取 MinIO 对象完成，上传流量治理交给网关层。
 
 ---
 
-### 3. 多层限流与带宽治理
+### 3. RabbitMQ 异步任务与失败补偿
+
+项目当前没有把 RabbitMQ 用成所有写操作的默认异步入口，而是只放在两个明确需要异步化或失败补偿的地方：
+
+- **缓存删除失败补偿**：业务主流程仍然先同步删除缓存，并在事务成功后做延迟双删；只有延迟删除失败时，才投递 RabbitMQ 重试消息，避免为了异步化而扩大缓存不一致窗口。
+- **上传哈希校验**：分块合并成功后，前端返回的 full hash 不能直接作为可信结果。服务端先把上传会话标记为 `verifying`，再通过 RabbitMQ 异步读取 MinIO 对象并重新计算 hash，校验通过后才正式落库。
+
+缓存删除补偿链路：
+
+```text
+业务删除缓存失败
+-> 投递到延迟队列
+-> 延迟到期后进入消费队列
+-> 消费者按消息类型删除对应缓存
+-> 多次失败后进入死信队列
+```
+
+上传校验链路：
+
+```text
+CompleteChunkUpload 合并 MinIO 分块
+-> upload_sessions.status = verifying
+-> 投递上传校验消息
+-> 消费者读取 MinIO 对象并计算真实 hash
+-> 校验通过后创建 file_stores/user_files
+-> 校验失败后标记 failed 并删除 MinIO 对象
+```
+
+两类消息都使用手动 Ack、持久化消息和 publisher confirm。消费者处理失败时不会直接丢弃消息，而是结合重试次数、延迟队列和死信队列控制重试节奏。消费逻辑按状态做幂等保护，重复消息不会重复创建用户文件或重复修改已经完成的上传会话。
+
+---
+
+### 4. 多层限流与带宽治理
 
 项目没有把限流只做成一个全局 QPS 开关，而是按“数据流量”和“业务控制面”分层治理：
 
@@ -147,7 +182,7 @@ InitChunkUpload
 
 ---
 
-### 4. 文件池去重、用户空间与对象生命周期
+### 5. 文件池去重、用户空间与对象生命周期
 
 项目把“物理文件”和“用户文件”拆成两张表：
 
@@ -166,7 +201,7 @@ user_files：用户视角文件，保存 user_id、parent_id、file_name、file_
 
 ---
 
-### 5. Redis 缓存链路与一致性策略
+### 6. Redis 缓存链路与一致性策略
 
 项目中的 Redis 不只保存上传过程中的临时状态，也承接了一层业务缓存，用来降低热点读请求对 MySQL 的压力。当前已经落地的缓存主要包括：
 
@@ -203,6 +238,8 @@ user_files：用户视角文件，保存 user_id、parent_id、file_name、file_
 
 第一次删除用于尽量避免脏读，第二次延迟删除用于覆盖“写库后刚好有请求回填旧缓存”的窗口期。删除失败不会阻断主流程，但会记录日志。
 
+在延迟删除仍然失败时，`user:info`、`user:file:list`、`user:recycle:list`、`user:file:meta` 会投递 RabbitMQ 缓存失效消息做后续补偿。消息中保存缓存类型和必要的业务 ID，消费者根据消息类型调用对应的缓存删除方法。重试消息先进入延迟队列，避免 Redis 短暂异常时立刻高频重试；超过最大重试次数后进入死信队列，便于后续人工排查。
+
 针对缓存异常场景，项目当前也做了两层防护：
 
 - **缓存击穿**：分享下载的 `share:token:{token}` 在缓存未命中时会使用 Redis 分布式锁做缓存重建互斥，避免热点分享链接过期瞬间大量请求同时打到数据库。
@@ -217,7 +254,7 @@ user_files：用户视角文件，保存 user_id、parent_id、file_name、file_
 | 模块 | 能力 |
 | --- | --- |
 | 用户 | 注册、登录、刷新 Token、获取用户信息、管理员更新会员/空间配置 |
-| 文件上传 | 小文件普通上传、大文件 MinIO 分块直传、断点续传、分块完整性校验 |
+| 文件上传 | 小文件普通上传、大文件 MinIO 分块直传、断点续传、分块完整性校验、上传后异步哈希校验 |
 | 秒传 | 抽样预筛、完整 hash 命中、随机片段 PoE、Redis 挑战会话、MinIO Range 校验 |
 | 文件管理 | 目录列表、创建文件夹、批量删除、回收站、恢复、永久删除 |
 | 下载 | 私有文件预签名下载、分享文件预签名下载 |
@@ -253,7 +290,7 @@ user_files：用户视角文件，保存 user_id、parent_id、file_name、file_
 | POST | `/file/upload/init` | 初始化大文件分块上传 |
 | POST | `/file/upload/sign-part` | 获取某个分块的 MinIO 预签名上传 URL |
 | POST | `/file/upload/report-part` | 回报已上传分块 ETag |
-| POST | `/file/upload/complete` | 完成 MinIO 分块合并并落库 |
+| POST | `/file/upload/complete` | 完成 MinIO 分块合并并进入异步哈希校验 |
 | GET | `/file/download/:ID` | 获取私有文件下载 URL |
 
 ### 文件管理接口
@@ -279,9 +316,10 @@ config/                 配置文件
 internal/api/           HTTP handler
 internal/app/           依赖组装和应用启动
 internal/cache/         缓存 key、TTL、DTO、失效策略等定义
-internal/initialize/    MySQL、Redis、MinIO 初始化
+internal/initialize/    MySQL、Redis、RabbitMQ、MinIO 初始化
 internal/middleware/    JWT、超时、管理员中间件
 internal/model/         GORM 模型
+internal/mq/            RabbitMQ 生产者、消费者和消息定义
 internal/oss/           MinIO 封装
 internal/ratelimit/     Redis 令牌桶限流组件
 internal/repository/    数据访问层
@@ -301,7 +339,7 @@ frontend/               Vue 3 前端
 config/config.yaml
 ```
 
-配置 MySQL、Redis、MinIO、JWT 等参数。
+配置 MySQL、Redis、RabbitMQ、MinIO、JWT 等参数。
 
 2. 启动后端：
 

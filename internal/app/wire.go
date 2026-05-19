@@ -24,6 +24,7 @@ func BuildApp(db *gorm.DB, redis *redis.Client, minio *minio.Client, mqConn *amq
 	// wire 会自动分析依赖顺序：db -> Repo -> Service -> Handler -> Router
 	wire.Build(
 		mq.NewCacheInvalidationPublisher,
+		mq.NewUploadVerificationPublisher,
 		repository.NewUserRepo,
 		repository.NewUserCacheRepo,
 		repository.NewFileRepo,

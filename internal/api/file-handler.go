@@ -330,7 +330,7 @@ func (h *FileHandler) CompleteChunkUpload(c *gin.Context) {
 		return
 	}
 	userID, _ := c.Get("userID")
-	uploadedID, err := h.fileService.CompleteChunkUpload(c.Request.Context(), userID.(uint), req.UploadID)
+	resp, err := h.fileService.CompleteChunkUpload(c.Request.Context(), userID.(uint), req.UploadID)
 	if err != nil {
 		if h.handleRateLimitError(c, err) {
 			return
@@ -356,7 +356,7 @@ func (h *FileHandler) CompleteChunkUpload(c *gin.Context) {
 		}
 		return
 	}
-	response.Success(c, gin.H{"id": uploadedID})
+	response.Success(c, resp)
 }
 
 // CreateFolder 创建文件夹

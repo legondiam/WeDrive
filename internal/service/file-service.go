@@ -61,6 +61,7 @@ type FileService struct {
 	storage        *oss.Storage
 	db             *gorm.DB
 	cachePublisher *mq.CacheInvalidationPublisher
+	uploadVerifier *mq.UploadVerificationPublisher
 }
 
 type RecycleFileResp struct {
@@ -112,6 +113,11 @@ type ChunkUploadInitReq struct {
 type ChunkUploadInitResp struct {
 	UploadID       uint  `json:"upload_id,omitempty"`
 	UploadedChunks []int `json:"uploaded_chunks,omitempty"`
+}
+
+type CompleteChunkUploadResp struct {
+	Status   string `json:"status"`
+	UploadID uint   `json:"upload_id"`
 }
 
 type SignPartReq struct {
@@ -173,8 +179,8 @@ type instantPrepareState struct {
 	Challenges  []InstantUploadChallenge `json:"challenges"`
 }
 
-func NewFileService(fileRepo *repository.FileRepo, fileCache *repository.FileCacheRepo, uploadCache *repository.UploadCacheRepo, rateLimiter *ratelimit.Limiter, userRepo *repository.UserRepo, userCache *repository.UserCacheRepo, storage *oss.Storage, db *gorm.DB, cachePublisher *mq.CacheInvalidationPublisher) *FileService {
-	return &FileService{fileRepo: fileRepo, fileCache: fileCache, uploadCache: uploadCache, rateLimiter: rateLimiter, storage: storage, db: db, userRepo: userRepo, userCache: userCache, cachePublisher: cachePublisher}
+func NewFileService(fileRepo *repository.FileRepo, fileCache *repository.FileCacheRepo, uploadCache *repository.UploadCacheRepo, rateLimiter *ratelimit.Limiter, userRepo *repository.UserRepo, userCache *repository.UserCacheRepo, storage *oss.Storage, db *gorm.DB, cachePublisher *mq.CacheInvalidationPublisher, uploadVerifier *mq.UploadVerificationPublisher) *FileService {
+	return &FileService{fileRepo: fileRepo, fileCache: fileCache, uploadCache: uploadCache, rateLimiter: rateLimiter, storage: storage, db: db, userRepo: userRepo, userCache: userCache, cachePublisher: cachePublisher, uploadVerifier: uploadVerifier}
 }
 
 func (s *FileService) deleteUserInfoCache(ctx context.Context, userID uint) {
@@ -599,21 +605,23 @@ func (s *FileService) ReportUploadedPart(ctx context.Context, userID uint, req R
 }
 
 // CompleteChunkUpload 完成分块上传
-func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sessionID uint) (uint, error) {
+func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sessionID uint) (CompleteChunkUploadResp, error) {
 	if err := s.allowRate(ctx, fmt.Sprintf("upload:complete:user:%d", userID), uploadCompleteRatePerSecond, uploadCompleteBurst); err != nil {
-		return 0, err
+		return CompleteChunkUploadResp{}, err
 	}
+
 	//获取分布式锁
 	lockKey := fmt.Sprintf("lock:upload:complete:%d", sessionID)
 	lockToken, locked, err := s.rateLimiter.TryLock(ctx, lockKey, uploadCompleteLockTTL)
 	if err != nil {
-		return 0, errors.WithMessage(err, "获取上传完成锁失败")
+		return CompleteChunkUploadResp{}, errors.WithMessage(err, "获取上传完成锁失败")
 	}
 	if !locked {
-		return 0, ErrUploadSessionProcessing
+		return CompleteChunkUploadResp{}, ErrUploadSessionProcessing
 	}
 	refreshCtx, cancelRefresh := context.WithTimeout(context.Background(), uploadCompleteLockMaxRefresh)
 	//续期锁，并在最后停止续期
+
 	defer cancelRefresh()
 	s.rateLimiter.AutoRefreshLock(refreshCtx, lockKey, lockToken, uploadCompleteLockTTL, func(err error) {
 		logger.S.Errorf("续期上传完成锁失败, uploadID: %d, err: %+v", sessionID, err)
@@ -622,53 +630,61 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 	defer func() {
 		_ = s.rateLimiter.Unlock(context.Background(), lockKey, lockToken)
 	}()
+
 	//查询上传会话
 	session, err := s.fileRepo.GetUploadSessionByID(ctx, sessionID, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return 0, ErrUploadSessionInvalid
+			return CompleteChunkUploadResp{}, ErrUploadSessionInvalid
 		}
-		return 0, errors.WithMessage(err, "查询上传会话失败")
+		return CompleteChunkUploadResp{}, errors.WithMessage(err, "查询上传会话失败")
 	}
 	//上传会话已完成,直接返回ID
 	if session.Status == uploadSessionStatusCompleted {
 		if session.UserFileID == 0 {
-			return 0, ErrUploadSessionInvalid
+			return CompleteChunkUploadResp{}, ErrUploadSessionInvalid
 		}
-		return session.UserFileID, nil
+		return CompleteChunkUploadResp{Status: uploadSessionStatusCompleted, UploadID: session.ID}, nil
+	}
+	//会话正在校验哈希，再次发送消息
+	if session.Status == uploadSessionStatusVerifying {
+		if err := s.publishUploadVerification(ctx, session.ID); err != nil {
+			return CompleteChunkUploadResp{}, err
+		}
+		return CompleteChunkUploadResp{Status: uploadSessionStatusVerifying, UploadID: session.ID}, nil
 	}
 	if session.Status != uploadSessionStatusPending {
-		return 0, ErrUploadSessionInvalid
+		return CompleteChunkUploadResp{}, ErrUploadSessionInvalid
 	}
 	//校验哈希类型
 	if err := validateHashType(session.HashType); err != nil {
-		return 0, err
+		return CompleteChunkUploadResp{}, err
 	}
-
 	if err := s.checkParentFolder(ctx, userID, session.ParentID); err != nil {
-		return 0, errors.WithMessage(err, "父文件夹不合法")
+		return CompleteChunkUploadResp{}, errors.WithMessage(err, "父文件夹不合法")
 	}
 	user, err := s.userRepo.GetUserInfo(ctx, userID)
 	if err != nil {
-		return 0, errors.WithMessage(err, "获取用户信息失败")
+		return CompleteChunkUploadResp{}, errors.WithMessage(err, "获取用户信息失败")
 	}
 	if user.UsedSpace+session.FileSize > user.TotalSpace {
-		return 0, ErrUserSpaceNotEnough
+		return CompleteChunkUploadResp{}, ErrUserSpaceNotEnough
 	}
+
 	//读取分块ETag
 	partEtags, err := s.uploadCache.ListPartETags(ctx, session.ID)
 	if err != nil {
-		return 0, errors.WithMessage(err, "读取分块ETag失败")
+		return CompleteChunkUploadResp{}, errors.WithMessage(err, "读取分块ETag失败")
 	}
 	if len(partEtags) != session.ChunkCount {
-		return 0, ErrChunkUploadIncomplete
+		return CompleteChunkUploadResp{}, ErrChunkUploadIncomplete
 	}
 	//组装分块合并请求参数
 	completeParts := make([]oss.CompletePart, 0, len(partEtags))
 	for index, part := range partEtags {
 		expected := index + 1
 		if part.PartNumber != expected || part.Value == "" {
-			return 0, ErrChunkUploadIncomplete
+			return CompleteChunkUploadResp{}, ErrChunkUploadIncomplete
 		}
 		completeParts = append(completeParts, oss.CompletePart{
 			PartNumber: part.PartNumber,
@@ -676,11 +692,8 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 		})
 	}
 	if err := s.storage.CompleteMultipartUpload(ctx, session.ObjectName, session.StorageUploadID, completeParts); err != nil {
-		return 0, errors.WithMessage(err, "完成对象分块上传失败")
+		return CompleteChunkUploadResp{}, errors.WithMessage(err, "完成对象分块上传失败")
 	}
-
-	s.deleteUserInfoCache(ctx, userID)
-	s.deleteUserFileListCache(ctx, userID, session.ParentID)
 
 	keepMinioObject := false
 	defer func() {
@@ -690,7 +703,7 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 		_ = s.uploadCache.DeleteUploadState(ctx, session.ID)
 	}()
 
-	var uploadedID uint
+	//开启事务
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		lockedSession, lockErr := s.fileRepo.GetUploadSessionByIDForUpdate(ctx, sessionID, userID, tx)
 		if lockErr != nil {
@@ -699,94 +712,236 @@ func (s *FileService) CompleteChunkUpload(ctx context.Context, userID uint, sess
 			}
 			return errors.WithMessage(lockErr, "锁定上传会话失败")
 		}
-		//事务内兜底：再次检查已完成会话直接返回ID
-		//但由于接口上了分布式锁，理论上一开始检查一次即可
-		// if lockedSession.Status == uploadSessionStatusCompleted {
-		// 	if lockedSession.UserFileID == 0 {
-		// 		return ErrUploadSessionInvalid
-		// 	}
-		// 	uploadedID = lockedSession.UserFileID
-		// 	return nil
-		// }
 		if lockedSession.Status != uploadSessionStatusPending {
 			return ErrUploadSessionInvalid
 		}
-
-		//确保去重
-		fileStore, findErr := s.fileRepo.GetFileByIdentityForUpdate(ctx, session.HashType, session.FileHash, tx)
-		switch {
-		case findErr == nil:
-			//去重命中，创建秒传记录
-			uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, session.ParentID, session.FileName, fileStore.FileSize, fileStore)
-			if err != nil {
-				return err
-			}
-		case errors.Is(findErr, gorm.ErrRecordNotFound):
-			//去重未命中，创建文件元数据
-			newFileStore := &model.FileStore{
-				HashType: session.HashType,
-				FileHash: session.FileHash,
-				FileName: session.FileName,
-				FileSize: session.FileSize,
-				FileAddr: session.ObjectName,
-				HeadHash: session.HeadHash,
-				MidHash:  session.MidHash,
-				TailHash: session.TailHash,
-			}
-			if createErr := s.fileRepo.CreateFileStore(ctx, newFileStore, tx); createErr != nil {
-				if !isDuplicateKeyError(createErr) {
-					return errors.WithMessage(createErr, "文件元数据存储失败")
-				}
-				//再次查询以去重
-				fileStore, createErr = s.fileRepo.GetFileByIdentityForUpdate(ctx, session.HashType, session.FileHash, tx)
-				if createErr != nil {
-					return errors.WithMessage(createErr, "查询并发写入的文件失败")
-				}
-				uploadedID, err = s.createInstantUploadRecord(ctx, tx, userID, session.ParentID, session.FileName, fileStore.FileSize, fileStore)
-				if err != nil {
-					return err
-				}
-				break
-			}
-			keepMinioObject = true
-			//创建用户文件记录
-			newUserFile := &model.UserFile{
-				UserId:      userID,
-				FileStoreID: &newFileStore.ID,
-				FileName:    session.FileName,
-				ParentID:    session.ParentID,
-			}
-			if err := s.fileRepo.CreateUserFile(ctx, newUserFile, tx); err != nil {
-				return errors.WithMessage(err, "用户文件数据存储失败")
-			}
-			uploadedID = newUserFile.ID
-			if err := s.userRepo.UpdateUserSpace(ctx, userID, session.FileSize, tx); err != nil {
-				return errors.WithMessage(err, "更新用户空间失败")
-			}
-		default:
-			return errors.WithMessage(findErr, "查询文件失败")
-		}
-
-		//更新上传会话状态
-		now := time.Now()
-		lockedSession.Status = uploadSessionStatusCompleted
-		lockedSession.UserFileID = uploadedID
-		lockedSession.CompletedAt = &now
+		//修改上传会话状态为verifying
+		lockedSession.Status = uploadSessionStatusVerifying
 		if err := s.fileRepo.SaveUploadSession(ctx, lockedSession, tx); err != nil {
 			return errors.WithMessage(err, "更新上传会话状态失败")
 		}
 		return nil
 	})
 	if err != nil {
-		return 0, errors.WithMessage(err, "完成分块上传失败")
+		return CompleteChunkUploadResp{}, errors.WithMessage(err, "完成分块上传失败")
+	}
+	keepMinioObject = true
+	//发送校验消息
+	if err := s.publishUploadVerification(ctx, session.ID); err != nil {
+		return CompleteChunkUploadResp{}, err
 	}
 
-	logger.S.Infof("直传分块上传完成, uploadID: %d, hashType: %s, fileHash: %s, userID: %d", sessionID, session.HashType, session.FileHash, userID)
+	logger.S.Infof("分块上传已合并，等待异步校验, uploadID: %d, hashType: %s, fileHash: %s, userID: %d", sessionID, session.HashType, session.FileHash, userID)
+	return CompleteChunkUploadResp{Status: uploadSessionStatusVerifying, UploadID: session.ID}, nil
+}
+
+// 发送上传校验消息
+func (s *FileService) publishUploadVerification(ctx context.Context, uploadID uint) error {
+	if s.uploadVerifier == nil {
+		return errors.New("上传校验消息生产者未初始化")
+	}
+	if err := s.uploadVerifier.PublishUploadVerification(ctx, uploadID); err != nil {
+		return errors.WithMessage(err, "发送上传校验消息失败")
+	}
+	return nil
+}
+
+// VerifyChunkUpload 校验已合并的分块上传对象并完成入库
+func (s *FileService) VerifyChunkUpload(ctx context.Context, uploadID uint) error {
+	//读取上传会话
+	session, err := s.fileRepo.GetUploadSessionByIDAnyUser(ctx, uploadID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return errors.WithMessage(err, "查询上传会话失败")
+	}
+	//只处理等待校验的会话
+	if session.Status != uploadSessionStatusVerifying {
+		return nil
+	}
+	//校验哈希类型
+	if err := validateHashType(session.HashType); err != nil {
+		return s.failChunkUploadVerification(ctx, session, "不支持的哈希类型")
+	}
+
+	//流式读取MinIO对象并计算真实哈希
+	fileHashes, actualSize, err := s.storage.HashObjectWithSamples(ctx, session.ObjectName, session.FileSize)
+	if err != nil {
+		return errors.WithMessage(err, "计算上传对象哈希失败")
+	}
+	//比对大小、完整哈希和抽样哈希
+	if actualSize != session.FileSize || !uploadSessionHashesMatch(session, fileHashes) {
+		return s.failChunkUploadVerification(ctx, session, "哈希不匹配")
+	}
+	//校验父目录仍然有效
+	if err := s.checkParentFolder(ctx, session.UserID, session.ParentID); err != nil {
+		return s.failChunkUploadVerification(ctx, session, "父目录无效")
+	}
+	//校验用户空间仍然足够
+	user, err := s.userRepo.GetUserInfo(ctx, session.UserID)
+	if err != nil {
+		return errors.WithMessage(err, "获取用户信息失败")
+	}
+	if user.UsedSpace+session.FileSize > user.TotalSpace {
+		return s.failChunkUploadVerification(ctx, session, "用户空间不足")
+	}
+
+	//校验通过后创建文件池和用户文件记录
+	deleteUploadedObject, err := s.finalizeVerifiedChunkUpload(ctx, session)
+	if err != nil {
+		return err
+	}
+	//如果文件池已存在，删除本次重复上传的对象
+	if deleteUploadedObject {
+		if err := s.storage.DeleteFile(context.Background(), session.ObjectName); err != nil {
+			logger.S.Warnf("删除去重后的上传对象失败, uploadID: %d, objectName: %s, err: %v", session.ID, session.ObjectName, err)
+		}
+	}
+	//清理上传过程缓存
+	if err := s.uploadCache.DeleteUploadState(ctx, session.ID); err != nil {
+		logger.S.Warnf("删除上传状态缓存失败, uploadID: %d, err: %v", session.ID, err)
+	}
+	//删除用户信息和文件列表缓存
+	s.deleteUserInfoCache(ctx, session.UserID)
+	s.deleteUserFileListCache(ctx, session.UserID, session.ParentID)
 	cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
-		return s.userCache.DeleteUserInfo(ctx, userID)
+		return s.userCache.DeleteUserInfo(ctx, session.UserID)
 	})
-	s.delayedDeleteUserFileListCache(userID, session.ParentID)
-	return uploadedID, nil
+	s.delayedDeleteUserFileListCache(session.UserID, session.ParentID)
+	return nil
+}
+
+// uploadSessionHashesMatch 判断上传会话中的前端哈希是否和服务端真实哈希一致
+func uploadSessionHashesMatch(session *model.UploadSession, fileHashes hash.FileHashes) bool {
+	return strings.EqualFold(strings.TrimSpace(session.FileHash), fileHashes.Full) &&
+		strings.EqualFold(strings.TrimSpace(session.HeadHash), fileHashes.Head) &&
+		strings.EqualFold(strings.TrimSpace(session.MidHash), fileHashes.Mid) &&
+		strings.EqualFold(strings.TrimSpace(session.TailHash), fileHashes.Tail)
+}
+
+// failChunkUploadVerification 标记上传校验失败并清理对象和缓存
+func (s *FileService) failChunkUploadVerification(ctx context.Context, session *model.UploadSession, reason string) error {
+	//加锁后确认仍处于等待校验状态
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		//查询会话状态
+		lockedSession, lockErr := s.fileRepo.GetUploadSessionByIDForUpdateAnyUser(ctx, session.ID, tx)
+		if lockErr != nil {
+			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return errors.WithMessage(lockErr, "锁定上传会话失败")
+		}
+		//只在状态为verifying时，修改状态为failed
+		if lockedSession.Status != uploadSessionStatusVerifying {
+			return nil
+		}
+		lockedSession.Status = uploadSessionStatusFailed
+		return s.fileRepo.SaveUploadSession(ctx, lockedSession, tx)
+	})
+	if err != nil {
+		return err
+	}
+	//删除上传状态缓存
+	if err := s.uploadCache.DeleteUploadState(ctx, session.ID); err != nil {
+		logger.S.Warnf("删除失败上传状态缓存失败, uploadID: %d, err: %v", session.ID, err)
+	}
+	//删除校验失败的MinIO对象
+	if err := s.storage.DeleteFile(context.Background(), session.ObjectName); err != nil {
+		logger.S.Warnf("删除校验失败的上传对象失败, uploadID: %d, objectName: %s, err: %v", session.ID, session.ObjectName, err)
+	}
+	logger.S.Warnf("分块上传校验失败, uploadID: %d, reason: %s", session.ID, reason)
+	return nil
+}
+
+// finalizeVerifiedChunkUpload 创建文件池和用户文件记录并完成上传会话
+func (s *FileService) finalizeVerifiedChunkUpload(ctx context.Context, session *model.UploadSession) (bool, error) {
+	deleteUploadedObject := false
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		//加锁后确认会话仍可被处理
+		lockedSession, lockErr := s.fileRepo.GetUploadSessionByIDForUpdateAnyUser(ctx, session.ID, tx)
+		if lockErr != nil {
+			if errors.Is(lockErr, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return errors.WithMessage(lockErr, "锁定上传会话失败")
+		}
+
+		if lockedSession.Status != uploadSessionStatusVerifying {
+			return ErrUploadSessionInvalid
+		}
+
+		var userFileID uint
+		//根据真实哈希检查文件池是否已存在
+		fileStore, findErr := s.fileRepo.GetFileByIdentityForUpdate(ctx, lockedSession.HashType, lockedSession.FileHash, tx)
+		switch {
+		case findErr == nil:
+			//文件池命中，只创建用户文件记录
+			var createErr error
+			userFileID, createErr = s.createInstantUploadRecord(ctx, tx, lockedSession.UserID, lockedSession.ParentID, lockedSession.FileName, fileStore.FileSize, fileStore)
+			if createErr != nil {
+				return createErr
+			}
+			deleteUploadedObject = true
+		case errors.Is(findErr, gorm.ErrRecordNotFound):
+			//文件池未命中，创建新的文件池记录
+			newFileStore := &model.FileStore{
+				HashType: lockedSession.HashType,
+				FileHash: lockedSession.FileHash,
+				FileName: lockedSession.FileName,
+				FileSize: lockedSession.FileSize,
+				FileAddr: lockedSession.ObjectName,
+				HeadHash: lockedSession.HeadHash,
+				MidHash:  lockedSession.MidHash,
+				TailHash: lockedSession.TailHash,
+			}
+			//尝试创建文件池记录
+			if createErr := s.fileRepo.CreateFileStore(ctx, newFileStore, tx); createErr != nil {
+				if !isDuplicateKeyError(createErr) {
+					return errors.WithMessage(createErr, "文件元数据存储失败")
+				}
+				//并发创建命中唯一索引后，重新查询文件池记录
+				fileStore, createErr = s.fileRepo.GetFileByIdentityForUpdate(ctx, lockedSession.HashType, lockedSession.FileHash, tx)
+				if createErr != nil {
+					return errors.WithMessage(createErr, "查询并发写入的文件失败")
+				}
+				//直接创建秒传记录
+				userFileID, createErr = s.createInstantUploadRecord(ctx, tx, lockedSession.UserID, lockedSession.ParentID, lockedSession.FileName, fileStore.FileSize, fileStore)
+				if createErr != nil {
+					return createErr
+				}
+				deleteUploadedObject = true
+				break
+			}
+			//创建用户文件记录并更新用户空间
+			newUserFile := &model.UserFile{
+				UserId:      lockedSession.UserID,
+				FileStoreID: &newFileStore.ID,
+				FileName:    lockedSession.FileName,
+				ParentID:    lockedSession.ParentID,
+			}
+			if err := s.fileRepo.CreateUserFile(ctx, newUserFile, tx); err != nil {
+				return errors.WithMessage(err, "用户文件数据存储失败")
+			}
+			userFileID = newUserFile.ID
+			if err := s.userRepo.UpdateUserSpace(ctx, lockedSession.UserID, lockedSession.FileSize, tx); err != nil {
+				return errors.WithMessage(err, "更新用户空间失败")
+			}
+		default:
+			return errors.WithMessage(findErr, "查询文件失败")
+		}
+
+		//标记上传会话完成
+		now := time.Now()
+		lockedSession.Status = uploadSessionStatusCompleted
+		lockedSession.UserFileID = userFileID
+		lockedSession.CompletedAt = &now
+		if err := s.fileRepo.SaveUploadSession(ctx, lockedSession, tx); err != nil {
+			return errors.WithMessage(err, "更新上传会话状态失败")
+		}
+		return nil
+	})
+	return deleteUploadedObject, err
 }
 
 // QuickCheck 抽样哈希快速判断是否可能秒传
