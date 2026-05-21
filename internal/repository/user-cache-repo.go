@@ -2,6 +2,7 @@ package repository
 
 import (
 	"WeDrive/internal/cache"
+	"WeDrive/internal/cacheguard"
 	"context"
 	"fmt"
 	"strconv"
@@ -13,26 +14,31 @@ import (
 
 type UserCacheRepo struct {
 	client *redis.Client
+	guard  *cacheguard.RedisGuard
 }
 
-func NewUserCacheRepo(client *redis.Client) *UserCacheRepo {
-	return &UserCacheRepo{client: client}
+func NewUserCacheRepo(client *redis.Client, guard *cacheguard.RedisGuard) *UserCacheRepo {
+	return &UserCacheRepo{client: client, guard: guard}
 }
 
-// SetRefreshToken 设置刷新令牌
+// SetRefreshToken 缓存刷新令牌。
 func (c *UserCacheRepo) SetRefreshToken(ctx context.Context, userID uint, tokenID string, expire time.Duration) error {
 	key := fmt.Sprintf("refresh_token:%s", tokenID)
-	err := c.client.Set(ctx, key, userID, expire).Err()
+	err := c.guard.Do(ctx, func(ctx context.Context) error {
+		return c.client.Set(ctx, key, userID, expire).Err()
+	})
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
-// GetRefreshToken 获取刷新令牌
+// GetRefreshToken 读取刷新令牌并校验归属用户。
 func (c *UserCacheRepo) GetRefreshToken(ctx context.Context, userID uint, tokenID string) (bool, error) {
 	key := fmt.Sprintf("refresh_token:%s", tokenID)
-	value, err := c.client.Get(ctx, key).Uint64()
+	value, err := cacheguard.DoResult(c.guard, ctx, func(ctx context.Context) (uint64, error) {
+		return c.client.Get(ctx, key).Uint64()
+	})
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return false, nil
@@ -42,43 +48,49 @@ func (c *UserCacheRepo) GetRefreshToken(ctx context.Context, userID uint, tokenI
 	return uint(value) == userID, nil
 }
 
-// DeleteRefreshToken 删除刷新令牌
+// DeleteRefreshToken 删除刷新令牌。
 func (c *UserCacheRepo) DeleteRefreshToken(ctx context.Context, tokenID string) error {
 	key := fmt.Sprintf("refresh_token:%s", tokenID)
-	err := c.client.Del(ctx, key).Err()
+	err := c.guard.Do(ctx, func(ctx context.Context) error {
+		return c.client.Del(ctx, key).Err()
+	})
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
-// SetUserInfo 缓存用户信息
+// SetUserInfo 缓存用户信息。
 func (c *UserCacheRepo) SetUserInfo(ctx context.Context, user cache.UserInfo) error {
 	vipExpireAt := ""
 	if user.VipExpireAt != nil {
 		vipExpireAt = user.VipExpireAt.Format(time.RFC3339Nano)
 	}
 	key := cache.UserInfoKey(user.ID)
-	//事务管道存入并设置过期时间
-	pipe := c.client.TxPipeline()
-	pipe.HSet(ctx, key, map[string]any{
-		"id":            strconv.FormatUint(uint64(user.ID), 10),
-		"username":      user.Username,
-		"total_space":   strconv.FormatInt(user.TotalSpace, 10),
-		"used_space":    strconv.FormatInt(user.UsedSpace, 10),
-		"member_level":  strconv.FormatInt(int64(user.MemberLevel), 10),
-		"vip_expire_at": vipExpireAt,
-	})
-	pipe.Expire(ctx, key, cache.JitterTTL(cache.UserInfoTTL))
-	if _, err := pipe.Exec(ctx); err != nil {
+	if err := c.guard.Do(ctx, func(ctx context.Context) error {
+		pipe := c.client.TxPipeline()
+		pipe.HSet(ctx, key, map[string]any{
+			"id":            strconv.FormatUint(uint64(user.ID), 10),
+			"username":      user.Username,
+			"total_space":   strconv.FormatInt(user.TotalSpace, 10),
+			"used_space":    strconv.FormatInt(user.UsedSpace, 10),
+			"member_level":  strconv.FormatInt(int64(user.MemberLevel), 10),
+			"vip_expire_at": vipExpireAt,
+		})
+		pipe.Expire(ctx, key, cache.JitterTTL(cache.UserInfoTTL))
+		_, err := pipe.Exec(ctx)
+		return err
+	}); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
-// GetUserInfo 从缓存中获取用户信息
+// GetUserInfo 从缓存读取用户信息。
 func (c *UserCacheRepo) GetUserInfo(ctx context.Context, userID uint) (*cache.UserInfo, bool, error) {
-	values, err := c.client.HGetAll(ctx, cache.UserInfoKey(userID)).Result()
+	values, err := cacheguard.DoResult(c.guard, ctx, func(ctx context.Context) (map[string]string, error) {
+		return c.client.HGetAll(ctx, cache.UserInfoKey(userID)).Result()
+	})
 	if err != nil {
 		return nil, false, errors.WithStack(err)
 	}
@@ -119,6 +131,9 @@ func (c *UserCacheRepo) GetUserInfo(ctx context.Context, userID uint) (*cache.Us
 	}, true, nil
 }
 
+// DeleteUserInfo 删除用户信息缓存。
 func (c *UserCacheRepo) DeleteUserInfo(ctx context.Context, userID uint) error {
-	return cache.Delete(ctx, c.client, cache.UserInfoKey(userID))
+	return c.guard.Do(ctx, func(ctx context.Context) error {
+		return cache.Delete(ctx, c.client, cache.UserInfoKey(userID))
+	})
 }

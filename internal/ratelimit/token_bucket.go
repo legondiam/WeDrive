@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"WeDrive/internal/cacheguard"
 	"context"
 	"time"
 
@@ -45,10 +46,11 @@ return allowed
 
 type Limiter struct {
 	client *redis.Client
+	guard  *cacheguard.RedisGuard
 }
 
-func NewLimiter(client *redis.Client) *Limiter {
-	return &Limiter{client: client}
+func NewLimiter(client *redis.Client, guard *cacheguard.RedisGuard) *Limiter {
+	return &Limiter{client: client, guard: guard}
 }
 
 // AllowTokenBucket 令牌桶检查入口
@@ -56,7 +58,9 @@ func (l *Limiter) AllowTokenBucket(ctx context.Context, key string, ratePerSecon
 	if ratePerSecond <= 0 || burst <= 0 || ttl <= 0 {
 		return false, errors.New("rate limit config invalid")
 	}
-	result, err := l.client.Eval(ctx, tokenBucketScript, []string{key}, ratePerSecond, burst, ttl.Milliseconds()).Int()
+	result, err := cacheguard.DoResult(l.guard, ctx, func(ctx context.Context) (int, error) {
+		return l.client.Eval(ctx, tokenBucketScript, []string{key}, ratePerSecond, burst, ttl.Milliseconds()).Int()
+	})
 	if err != nil {
 		return false, errors.WithStack(err)
 	}

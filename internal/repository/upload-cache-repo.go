@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"WeDrive/internal/cacheguard"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,9 +20,9 @@ type UploadPartState struct {
 
 type UploadCacheRepo struct {
 	client *redis.Client
+	guard  *cacheguard.RedisGuard
 }
 
-// 获取并删除秒传挑战准备态
 const consumeInstantPrepareScript = `
 local value = redis.call("GET", KEYS[1])
 if value then
@@ -30,8 +31,8 @@ end
 return value
 `
 
-func NewUploadCacheRepo(client *redis.Client) *UploadCacheRepo {
-	return &UploadCacheRepo{client: client}
+func NewUploadCacheRepo(client *redis.Client, guard *cacheguard.RedisGuard) *UploadCacheRepo {
+	return &UploadCacheRepo{client: client, guard: guard}
 }
 
 // partHashesKey 返回分块哈希有序集合 key。
@@ -39,22 +40,22 @@ func (r *UploadCacheRepo) partHashesKey(sessionID uint) string {
 	return fmt.Sprintf("upload_session:%d:part_hashes", sessionID)
 }
 
-// partEtagsKey 返回分块ETag有序集合 key。
+// partEtagsKey 返回分块 ETag 有序集合 key。
 func (r *UploadCacheRepo) partEtagsKey(sessionID uint) string {
 	return fmt.Sprintf("upload_session:%d:part_etags", sessionID)
 }
 
-// instantPrepareKey 返回秒传准备key
+// instantPrepareKey 返回秒传挑战准备状态 key。
 func (r *UploadCacheRepo) instantPrepareKey(prepareID string) string {
 	return fmt.Sprintf("instant_prepare:%s", prepareID)
 }
 
-// encodePartState 将分块编号和值编码为 Redis member，避免仅用值时无法区分重复分块哈希/ETag。
+// encodePartState 将分块编号和值编码成 Redis member。
 func encodePartState(partNumber int, value string) string {
 	return fmt.Sprintf("%d|%s", partNumber, value)
 }
 
-// decodePartState 将 Redis member 解析回分块编号和值。
+// decodePartState 将 Redis member 解码成分块状态。
 func decodePartState(raw string) (UploadPartState, error) {
 	part, value, ok := strings.Cut(raw, "|")
 	if !ok {
@@ -67,29 +68,30 @@ func decodePartState(raw string) (UploadPartState, error) {
 	return UploadPartState{PartNumber: partNumber, Value: value}, nil
 }
 
-// setSortedPartValue 按 partNumber 写入有序集合，并刷新该 key 的过期时间。
+// setSortedPartValue 按分块编号写入有序集合并刷新过期时间。
 func (r *UploadCacheRepo) setSortedPartValue(ctx context.Context, key string, partNumber int, value string, expire time.Duration) error {
-	//先删除已经存在的分块
-	number := strconv.FormatInt(int64(partNumber), 10)
-	pipe := r.client.TxPipeline()
-	pipe.ZRemRangeByScore(ctx, key, number, number)
-
-	pipe.ZAdd(ctx, key, redis.Z{
-		Score:  float64(partNumber),
-		Member: encodePartState(partNumber, value),
+	return r.guard.Do(ctx, func(ctx context.Context) error {
+		number := strconv.FormatInt(int64(partNumber), 10)
+		pipe := r.client.TxPipeline()
+		pipe.ZRemRangeByScore(ctx, key, number, number)
+		pipe.ZAdd(ctx, key, redis.Z{
+			Score:  float64(partNumber),
+			Member: encodePartState(partNumber, value),
+		})
+		pipe.Expire(ctx, key, expire)
+		_, err := pipe.Exec(ctx)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		return nil
 	})
-	//设置过期时间
-	pipe.Expire(ctx, key, expire)
-	_, err := pipe.Exec(ctx)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	return nil
 }
 
-// getSortedPartValues 读取指定有序集合中的全部分块状态，并按 score 顺序还原为结构化结果。
+// getSortedPartValues 读取全部分块状态并按分块编号排序。
 func (r *UploadCacheRepo) getSortedPartValues(ctx context.Context, key string) ([]UploadPartState, error) {
-	values, err := r.client.ZRange(ctx, key, 0, -1).Result()
+	values, err := cacheguard.DoResult(r.guard, ctx, func(ctx context.Context) ([]string, error) {
+		return r.client.ZRange(ctx, key, 0, -1).Result()
+	})
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return []UploadPartState{}, nil
@@ -110,10 +112,12 @@ func (r *UploadCacheRepo) getSortedPartValues(ctx context.Context, key string) (
 // getPartValue 读取指定分块的状态值。
 func (r *UploadCacheRepo) getPartValue(ctx context.Context, key string, partNumber int) (string, bool, error) {
 	number := strconv.FormatInt(int64(partNumber), 10)
-	values, err := r.client.ZRangeByScore(ctx, key, &redis.ZRangeBy{
-		Min: number,
-		Max: number,
-	}).Result()
+	values, err := cacheguard.DoResult(r.guard, ctx, func(ctx context.Context) ([]string, error) {
+		return r.client.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+			Min: number,
+			Max: number,
+		}).Result()
+	})
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return "", false, nil
@@ -130,37 +134,37 @@ func (r *UploadCacheRepo) getPartValue(ctx context.Context, key string, partNumb
 	return partState.Value, true, nil
 }
 
-// SetPartHash 保存某个分块的哈希值
+// SetPartHash 保存分块哈希。
 func (r *UploadCacheRepo) SetPartHash(ctx context.Context, sessionID uint, partNumber int, hash string, expire time.Duration) error {
 	return r.setSortedPartValue(ctx, r.partHashesKey(sessionID), partNumber, hash, expire)
 }
 
-// SetPartETag 保存某个分块的 ETag
+// SetPartETag 保存分块 ETag。
 func (r *UploadCacheRepo) SetPartETag(ctx context.Context, sessionID uint, partNumber int, etag string, expire time.Duration) error {
 	return r.setSortedPartValue(ctx, r.partEtagsKey(sessionID), partNumber, etag, expire)
 }
 
-// ListPartHashes 按序列出当前上传会话的全部分块哈希
+// ListPartHashes 列出上传会话的全部分块哈希。
 func (r *UploadCacheRepo) ListPartHashes(ctx context.Context, sessionID uint) ([]UploadPartState, error) {
 	return r.getSortedPartValues(ctx, r.partHashesKey(sessionID))
 }
 
-// GetPartHash 读取某个分块的哈希值。
+// GetPartHash 读取指定分块哈希。
 func (r *UploadCacheRepo) GetPartHash(ctx context.Context, sessionID uint, partNumber int) (string, bool, error) {
 	return r.getPartValue(ctx, r.partHashesKey(sessionID), partNumber)
 }
 
-// ListPartETags 按序列出当前上传会话的全部分块 ETag
+// ListPartETags 列出上传会话的全部分块 ETag。
 func (r *UploadCacheRepo) ListPartETags(ctx context.Context, sessionID uint) ([]UploadPartState, error) {
 	return r.getSortedPartValues(ctx, r.partEtagsKey(sessionID))
 }
 
-// GetPartETag 读取某个分块的 ETag。
+// GetPartETag 读取指定分块 ETag。
 func (r *UploadCacheRepo) GetPartETag(ctx context.Context, sessionID uint, partNumber int) (string, bool, error) {
 	return r.getPartValue(ctx, r.partEtagsKey(sessionID), partNumber)
 }
 
-// ListUploadedParts 返回成功回报 ETag 的分块列表，用于断点续传时跳过已上传分块。
+// ListUploadedParts 返回已回报 ETag 的分块编号。
 func (r *UploadCacheRepo) ListUploadedParts(ctx context.Context, sessionID uint) ([]int, error) {
 	partStates, err := r.ListPartETags(ctx, sessionID)
 	if err != nil {
@@ -173,29 +177,32 @@ func (r *UploadCacheRepo) ListUploadedParts(ctx context.Context, sessionID uint)
 	return partNumbers, nil
 }
 
-// DeleteUploadState 删除某个上传会话在 Redis 中保存的全部临时分块状态。
+// DeleteUploadState 删除上传会话的 Redis 临时状态。
 func (r *UploadCacheRepo) DeleteUploadState(ctx context.Context, sessionID uint) error {
-	err := r.client.Del(ctx, r.partHashesKey(sessionID), r.partEtagsKey(sessionID)).Err()
+	err := r.guard.Do(ctx, func(ctx context.Context) error {
+		return r.client.Del(ctx, r.partHashesKey(sessionID), r.partEtagsKey(sessionID)).Err()
+	})
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
-// SetInstantPrepare 保存秒传挑战准备态。
+// SetInstantPrepare 保存秒传挑战准备状态。
 func (r *UploadCacheRepo) SetInstantPrepare(ctx context.Context, prepareID string, payload any, expire time.Duration) error {
 	return r.setJSONValue(ctx, r.instantPrepareKey(prepareID), payload, expire)
 }
 
-// GetInstantPrepare 读取秒传挑战准备态。
-// target 需要传入可反序列化的目标对象指针，返回值 bool 表示 key 是否存在。
+// GetInstantPrepare 读取秒传挑战准备状态。
 func (r *UploadCacheRepo) GetInstantPrepare(ctx context.Context, prepareID string, target any) (bool, error) {
 	return r.getJSONValue(ctx, r.instantPrepareKey(prepareID), target)
 }
 
-// ConsumeInstantPrepare 原子读取并删除秒传挑战准备态。
+// ConsumeInstantPrepare 原子读取并删除秒传挑战准备状态。
 func (r *UploadCacheRepo) ConsumeInstantPrepare(ctx context.Context, prepareID string, target any) (bool, error) {
-	result, err := r.client.Eval(ctx, consumeInstantPrepareScript, []string{r.instantPrepareKey(prepareID)}).Result()
+	result, err := cacheguard.DoResult(r.guard, ctx, func(ctx context.Context) (any, error) {
+		return r.client.Eval(ctx, consumeInstantPrepareScript, []string{r.instantPrepareKey(prepareID)}).Result()
+	})
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return false, nil
@@ -212,24 +219,30 @@ func (r *UploadCacheRepo) ConsumeInstantPrepare(ctx context.Context, prepareID s
 	return true, nil
 }
 
-// DeleteInstantPrepare 删除秒传挑战准备态。
+// DeleteInstantPrepare 删除秒传挑战准备状态。
 func (r *UploadCacheRepo) DeleteInstantPrepare(ctx context.Context, prepareID string) error {
 	return r.deleteKey(ctx, r.instantPrepareKey(prepareID))
 }
 
+// setJSONValue 写入 JSON 缓存值。
 func (r *UploadCacheRepo) setJSONValue(ctx context.Context, key string, payload any, expire time.Duration) error {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	if err := r.client.Set(ctx, key, raw, expire).Err(); err != nil {
+	if err := r.guard.Do(ctx, func(ctx context.Context) error {
+		return r.client.Set(ctx, key, raw, expire).Err()
+	}); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
 }
 
+// getJSONValue 读取 JSON 缓存值。
 func (r *UploadCacheRepo) getJSONValue(ctx context.Context, key string, target any) (bool, error) {
-	raw, err := r.client.Get(ctx, key).Bytes()
+	raw, err := cacheguard.DoResult(r.guard, ctx, func(ctx context.Context) ([]byte, error) {
+		return r.client.Get(ctx, key).Bytes()
+	})
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return false, nil
@@ -242,8 +255,11 @@ func (r *UploadCacheRepo) getJSONValue(ctx context.Context, key string, target a
 	return true, nil
 }
 
+// deleteKey 删除指定 Redis key。
 func (r *UploadCacheRepo) deleteKey(ctx context.Context, key string) error {
-	if err := r.client.Del(ctx, key).Err(); err != nil {
+	if err := r.guard.Do(ctx, func(ctx context.Context) error {
+		return r.client.Del(ctx, key).Err()
+	}); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil

@@ -5,6 +5,7 @@ package app
 
 import (
 	"WeDrive/internal/api"
+	"WeDrive/internal/cacheguard"
 	"WeDrive/internal/mq"
 	"WeDrive/internal/oss"
 	"WeDrive/internal/ratelimit"
@@ -25,6 +26,7 @@ func BuildApp(db *gorm.DB, redis *redis.Client, minio *minio.Client, mqConn *amq
 	wire.Build(
 		mq.NewCacheInvalidationPublisher,
 		mq.NewUploadVerificationPublisher,
+		cacheguard.NewRedisGuard,
 		repository.NewUserRepo,
 		repository.NewUserCacheRepo,
 		repository.NewFileRepo,
