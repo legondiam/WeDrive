@@ -242,14 +242,14 @@ user_files：用户视角文件，保存 user_id、parent_id、file_name、file_
 
 针对缓存异常场景，项目当前也做了两层防护：
 
-- **缓存击穿**：分享下载的 `share:token:{token}` 在缓存未命中时会使用 Redis 分布式锁做缓存重建互斥，避免热点分享链接过期瞬间大量请求同时打到数据库。
+- **缓存击穿**：分享下载的 `share:token:{token}` 在缓存未命中时会优先使用 Redis 分布式锁做缓存重建互斥，避免热点分享链接过期瞬间大量请求同时打到数据库；当 Redis 读取、加锁或等待重建异常时，会退回到本机 `singleflight` 合并同一 token 的数据库查询，保证分享下载可用性。
 - **缓存雪崩**：业务缓存写入时统一增加 TTL 抖动，不再让同一类 key 在固定时间点批量失效；分享 token 的 TTL 抖动还会额外受分享剩余有效期约束，保证缓存时间不会超过分享本身过期时间。
 
 在 Redis 故障场景下，项目引入了熔断和分级降级策略。Redis 调用统一经过熔断保护，连续失败或滑动窗口错误率达到阈值后会短时间打开熔断，后续请求不再继续阻塞式访问 Redis，而是按业务类型进入不同处理：
 
-- **业务缓存可降级**：`user:info`、`user:file:list`、`user:recycle:list`、`user:file:meta`、`file:identity`、`file:sample` 等缓存读取失败或熔断打开时，主流程会回源 MySQL；缓存写入失败只记录日志，不阻断当前请求。
+- **业务缓存可降级**：`user:info`、`user:file:list`、`user:recycle:list`、`user:file:meta`、`file:identity`、`file:sample`、`share:token` 等缓存读取失败或熔断打开时，主流程会受控回源 MySQL；缓存写入失败只记录日志，不阻断当前请求。
 - **上传状态不可降级**：分块上传的 `part_hashes`、`part_etags` 和秒传的 `instant_prepare` 是上传链路状态源，Redis 不可用时不会跳过状态校验继续执行，而是快速返回错误，避免破坏断点续传、分块完整性和秒传挑战校验。
-- **安全与并发控制优先失败**：Refresh Token、上传 complete 分布式锁、分享缓存重建锁、Redis 令牌桶限流等依赖 Redis 保证安全或并发边界的链路，在 Redis 熔断时按失败处理，不做无状态放行。
+- **安全与并发控制优先失败**：Refresh Token、上传 complete 分布式锁、Redis 令牌桶限流等依赖 Redis 保证安全或全局并发边界的链路，在 Redis 熔断时按失败处理，不做无状态放行。
 
 这套缓存设计的目标很明确：上传状态缓存追求短生命周期和高频更新，业务缓存追求降低读压力和控制一致性窗口，两者职责分离。
 
