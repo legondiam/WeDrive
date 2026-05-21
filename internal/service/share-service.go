@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
 
@@ -27,6 +28,7 @@ type ShareService struct {
 	fileRepo    *repository.FileRepo
 	rateLimiter *ratelimit.Limiter
 	storage     *oss.Storage
+	shareGroup  singleflight.Group
 }
 
 type shareDownloadResp struct {
@@ -120,7 +122,8 @@ func (s *ShareService) GetShareDownloadURL(ctx context.Context, token string, ke
 func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*model.ShareFile, error) {
 	cachedShare, ok, err := s.shareCache.GetShareToken(ctx, token)
 	if err != nil {
-		return nil, err
+		logger.S.Warnf("读取分享缓存失败:%v", err)
+		return s.getShareFileByTokenSingleflight(ctx, token)
 	}
 	if ok {
 		return shareFileFromCache(cachedShare), nil
@@ -130,7 +133,8 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 	lockKey := "lock:cache:share:token:" + token
 	lockToken, locked, err := s.rateLimiter.TryLock(ctx, lockKey, cacheRebuildLockTTL)
 	if err != nil {
-		return nil, err
+		logger.S.Warnf("获取分享缓存重建锁失败:%v", err)
+		return s.getShareFileByTokenSingleflight(ctx, token)
 	}
 	//获取到锁，重建缓存
 	if locked {
@@ -140,7 +144,8 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 		//再次查缓存
 		cachedShare, ok, err = s.shareCache.GetShareToken(ctx, token)
 		if err != nil {
-			return nil, err
+			logger.S.Warnf("读取分享缓存失败:%v", err)
+			return s.getShareFileByTokenSingleflight(ctx, token)
 		}
 		if ok {
 			return shareFileFromCache(cachedShare), nil
@@ -150,7 +155,7 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 			return nil, err
 		}
 		if err := s.shareCache.SetShareToken(ctx, shareTokenCacheFromModel(shareFile)); err != nil {
-			return nil, err
+			logger.S.Warnf("缓存分享文件失败:%v", err)
 		}
 		return shareFile, nil
 	}
@@ -164,14 +169,31 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 		}
 		cachedShare, ok, err = s.shareCache.GetShareToken(ctx, token)
 		if err != nil {
-			return nil, err
+			logger.S.Warnf("读取分享缓存失败:%v", err)
+			return s.getShareFileByTokenSingleflight(ctx, token)
 		}
 		if ok {
 			return shareFileFromCache(cachedShare), nil
 		}
 	}
 
-	return nil, ErrCacheRebuilding
+	logger.S.Warnf("等待分享缓存重建超时, token: %s", token)
+	return s.getShareFileByTokenSingleflight(ctx, token)
+}
+
+// getShareFileByTokenSingleflight 合并同一 token 的数据库查询。
+func (s *ShareService) getShareFileByTokenSingleflight(ctx context.Context, token string) (*model.ShareFile, error) {
+	value, err, _ := s.shareGroup.Do(token, func() (any, error) {
+		return s.shareRepo.GetShareFile(ctx, token)
+	})
+	if err != nil {
+		return nil, err
+	}
+	shareFile, ok := value.(*model.ShareFile)
+	if !ok {
+		return nil, errors.New("share singleflight result invalid")
+	}
+	return shareFile, nil
 }
 
 // shareTokenCacheFromModel 将分享模型转换为缓存结构。
