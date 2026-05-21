@@ -6,6 +6,7 @@ import (
 	"WeDrive/internal/oss"
 	"WeDrive/internal/ratelimit"
 	"WeDrive/internal/repository"
+	"WeDrive/pkg/logger"
 	"WeDrive/pkg/utils/hash"
 	"WeDrive/pkg/utils/jwts"
 	"context"
@@ -73,7 +74,7 @@ func (s *ShareService) CreateShareFile(ctx context.Context, userID uint, userFil
 		return "", errors.WithMessage(err, "创建分享文件失败")
 	}
 	if err := s.shareCache.SetShareToken(ctx, shareTokenCacheFromModel(shareFile)); err != nil {
-		return "", errors.WithMessage(err, "缓存分享文件失败")
+		logger.S.Warnf("缓存分享文件失败:%v", err)
 	}
 	return token, nil
 }
@@ -115,6 +116,7 @@ func (s *ShareService) GetShareDownloadURL(ctx context.Context, token string, ke
 	return shareDownloadResp{URL: url, FileName: fileName}, nil
 }
 
+// getShareFileByToken 通过 token 获取分享记录并按需重建缓存。
 func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*model.ShareFile, error) {
 	cachedShare, ok, err := s.shareCache.GetShareToken(ctx, token)
 	if err != nil {
@@ -172,6 +174,7 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 	return nil, ErrCacheRebuilding
 }
 
+// shareTokenCacheFromModel 将分享模型转换为缓存结构。
 func shareTokenCacheFromModel(shareFile *model.ShareFile) cache.ShareToken {
 	return cache.ShareToken{
 		ID:         shareFile.ID,
@@ -183,6 +186,7 @@ func shareTokenCacheFromModel(shareFile *model.ShareFile) cache.ShareToken {
 	}
 }
 
+// shareFileFromCache 将分享缓存转换为模型。
 func shareFileFromCache(item *cache.ShareToken) *model.ShareFile {
 	return &model.ShareFile{
 		UserID:     item.UserID,

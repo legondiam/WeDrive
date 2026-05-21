@@ -69,6 +69,16 @@ type UploadCleanupConf struct {
 	ExpireAfter time.Duration `mapstructure:"expire_after"`
 	BatchSize   int           `mapstructure:"batch_size"`
 }
+type RedisBreakerConf struct {
+	Enabled             bool          `mapstructure:"enabled"`
+	Interval            time.Duration `mapstructure:"interval"`
+	BucketPeriod        time.Duration `mapstructure:"bucket_period"`
+	MinRequests         int           `mapstructure:"min_requests"`
+	FailureRate         float64       `mapstructure:"failure_rate"`
+	ConsecutiveFailures int           `mapstructure:"consecutive_failures"`
+	Timeout             time.Duration `mapstructure:"timeout"`
+	HalfOpenMaxRequests int           `mapstructure:"half_open_max_requests"`
+}
 type Conf struct {
 	App           AppConf           `mapstructure:"app"`
 	DB            DbConf            `mapstructure:"database"`
@@ -79,6 +89,7 @@ type Conf struct {
 	Admin         AdminConf         `mapstructure:"admin"`
 	Cookie        CookieConf        `mapstructure:"cookie"`
 	UploadCleanup UploadCleanupConf `mapstructure:"upload_cleanup"`
+	RedisBreaker  RedisBreakerConf  `mapstructure:"redis_breaker"`
 }
 
 var GlobalConf Conf

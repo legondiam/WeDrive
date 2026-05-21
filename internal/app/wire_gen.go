@@ -8,6 +8,7 @@ package app
 
 import (
 	"WeDrive/internal/api"
+	"WeDrive/internal/cacheguard"
 	"WeDrive/internal/mq"
 	"WeDrive/internal/oss"
 	"WeDrive/internal/ratelimit"
@@ -24,21 +25,22 @@ import (
 // Injectors from wire.go:
 
 func BuildApp(db *gorm.DB, redis2 *redis.Client, minio2 *minio.Client, mqConn *amqp.Connection) *gin.Engine {
+	redisGuard := cacheguard.NewRedisGuard()
 	userRepo := repository.NewUserRepo(db)
-	userCacheRepo := repository.NewUserCacheRepo(redis2)
+	userCacheRepo := repository.NewUserCacheRepo(redis2, redisGuard)
 	cacheInvalidationPublisher := mq.NewCacheInvalidationPublisher(mqConn)
 	userService := service.NewUserService(userRepo, userCacheRepo, cacheInvalidationPublisher)
 	userHandler := api.NewUserHandler(userService)
 	fileRepo := repository.NewFileRepo(db)
-	fileCacheRepo := repository.NewFileCacheRepo(redis2)
-	uploadCacheRepo := repository.NewUploadCacheRepo(redis2)
-	rateLimiter := ratelimit.NewLimiter(redis2)
+	fileCacheRepo := repository.NewFileCacheRepo(redis2, redisGuard)
+	uploadCacheRepo := repository.NewUploadCacheRepo(redis2, redisGuard)
+	rateLimiter := ratelimit.NewLimiter(redis2, redisGuard)
 	storage := oss.NewStorage(minio2)
 	uploadVerificationPublisher := mq.NewUploadVerificationPublisher(mqConn)
 	fileService := service.NewFileService(fileRepo, fileCacheRepo, uploadCacheRepo, rateLimiter, userRepo, userCacheRepo, storage, db, cacheInvalidationPublisher, uploadVerificationPublisher)
 	fileHandler := api.NewFileHandler(fileService)
 	shareRepo := repository.NewShareRepo(db)
-	shareCacheRepo := repository.NewShareCacheRepo(redis2)
+	shareCacheRepo := repository.NewShareCacheRepo(redis2, redisGuard)
 	shareService := service.NewShareService(shareRepo, shareCacheRepo, fileRepo, rateLimiter, storage)
 	shareHandler := api.NewShareHandler(shareService)
 	engine := router.NewRouter(userHandler, fileHandler, shareHandler)

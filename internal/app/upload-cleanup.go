@@ -1,6 +1,7 @@
 package app
 
 import (
+	"WeDrive/internal/cacheguard"
 	"WeDrive/internal/config"
 	"WeDrive/internal/mq"
 	"WeDrive/internal/oss"
@@ -26,14 +27,15 @@ const (
 
 // startBackgroundJobs 启动后台任务
 func startBackgroundJobs(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client, mqConn *amqp.Connection) {
-	startCacheInvalidationConsumer(redisClient, mqConn)
-	startUploadVerificationConsumer(db, redisClient, minioClient, mqConn)
-	startExpiredUploadCleanup(db, redisClient, minioClient)
+	redisGuard := cacheguard.NewRedisGuard()
+	startCacheInvalidationConsumer(redisClient, redisGuard, mqConn)
+	startUploadVerificationConsumer(db, redisClient, redisGuard, minioClient, mqConn)
+	startExpiredUploadCleanup(db, redisClient, redisGuard, minioClient)
 }
 
-func startCacheInvalidationConsumer(redisClient *redis.Client, mqConn *amqp.Connection) {
-	userCacheRepo := repository.NewUserCacheRepo(redisClient)
-	fileCacheRepo := repository.NewFileCacheRepo(redisClient)
+func startCacheInvalidationConsumer(redisClient *redis.Client, redisGuard *cacheguard.RedisGuard, mqConn *amqp.Connection) {
+	userCacheRepo := repository.NewUserCacheRepo(redisClient, redisGuard)
+	fileCacheRepo := repository.NewFileCacheRepo(redisClient, redisGuard)
 	if err := mq.StartCacheInvalidationConsumer(mqConn, userCacheRepo, fileCacheRepo); err != nil {
 		logger.S.Errorf("缓存失效消费者启动失败: %+v", err)
 		return
@@ -41,13 +43,13 @@ func startCacheInvalidationConsumer(redisClient *redis.Client, mqConn *amqp.Conn
 	logger.S.Info("缓存失效消费者已启动")
 }
 
-func startUploadVerificationConsumer(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client, mqConn *amqp.Connection) {
+func startUploadVerificationConsumer(db *gorm.DB, redisClient *redis.Client, redisGuard *cacheguard.RedisGuard, minioClient *minio.Client, mqConn *amqp.Connection) {
 	fileRepo := repository.NewFileRepo(db)
-	fileCacheRepo := repository.NewFileCacheRepo(redisClient)
-	uploadCacheRepo := repository.NewUploadCacheRepo(redisClient)
-	rateLimiter := ratelimit.NewLimiter(redisClient)
+	fileCacheRepo := repository.NewFileCacheRepo(redisClient, redisGuard)
+	uploadCacheRepo := repository.NewUploadCacheRepo(redisClient, redisGuard)
+	rateLimiter := ratelimit.NewLimiter(redisClient, redisGuard)
 	userRepo := repository.NewUserRepo(db)
-	userCacheRepo := repository.NewUserCacheRepo(redisClient)
+	userCacheRepo := repository.NewUserCacheRepo(redisClient, redisGuard)
 	storage := oss.NewStorage(minioClient)
 	cachePublisher := mq.NewCacheInvalidationPublisher(mqConn)
 	uploadVerifier := mq.NewUploadVerificationPublisher(mqConn)
@@ -60,7 +62,7 @@ func startUploadVerificationConsumer(db *gorm.DB, redisClient *redis.Client, min
 }
 
 // startExpiredUploadCleanup 启动僵尸分块定时清理任务。
-func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client) {
+func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, redisGuard *cacheguard.RedisGuard, minioClient *minio.Client) {
 	cleanupConf := config.GlobalConf.UploadCleanup
 	if !cleanupConf.Enabled {
 		return
@@ -80,11 +82,11 @@ func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, minioClie
 	}
 
 	fileRepo := repository.NewFileRepo(db)
-	fileCacheRepo := repository.NewFileCacheRepo(redisClient)
-	uploadCacheRepo := repository.NewUploadCacheRepo(redisClient)
-	rateLimiter := ratelimit.NewLimiter(redisClient)
+	fileCacheRepo := repository.NewFileCacheRepo(redisClient, redisGuard)
+	uploadCacheRepo := repository.NewUploadCacheRepo(redisClient, redisGuard)
+	rateLimiter := ratelimit.NewLimiter(redisClient, redisGuard)
 	userRepo := repository.NewUserRepo(db)
-	userCacheRepo := repository.NewUserCacheRepo(redisClient)
+	userCacheRepo := repository.NewUserCacheRepo(redisClient, redisGuard)
 	storage := oss.NewStorage(minioClient)
 	fileService := service.NewFileService(fileRepo, fileCacheRepo, uploadCacheRepo, rateLimiter, userRepo, userCacheRepo, storage, db, nil, nil)
 

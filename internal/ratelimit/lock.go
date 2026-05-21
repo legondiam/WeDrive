@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"WeDrive/internal/cacheguard"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -32,7 +33,9 @@ func (l *Limiter) TryLock(ctx context.Context, key string, ttl time.Duration) (s
 	if err != nil {
 		return "", false, err
 	}
-	ok, err := l.client.SetNX(ctx, key, token, ttl).Result()
+	ok, err := cacheguard.DoResult(l.guard, ctx, func(ctx context.Context) (bool, error) {
+		return l.client.SetNX(ctx, key, token, ttl).Result()
+	})
 	if err != nil {
 		return "", false, errors.WithStack(err)
 	}
@@ -44,7 +47,10 @@ func (l *Limiter) Unlock(ctx context.Context, key, token string) error {
 	if key == "" || token == "" {
 		return errors.New("lock key or token invalid")
 	}
-	if _, err := l.client.Eval(ctx, unlockScript, []string{key}, token).Result(); err != nil {
+	if err := l.guard.Do(ctx, func(ctx context.Context) error {
+		_, err := l.client.Eval(ctx, unlockScript, []string{key}, token).Result()
+		return err
+	}); err != nil {
 		return errors.WithStack(err)
 	}
 	return nil
@@ -55,7 +61,9 @@ func (l *Limiter) RefreshLock(ctx context.Context, key, token string, ttl time.D
 	if key == "" || token == "" || ttl <= 0 {
 		return false, errors.New("lock refresh config invalid")
 	}
-	result, err := l.client.Eval(ctx, refreshLockScript, []string{key}, token, ttl.Milliseconds()).Int()
+	result, err := cacheguard.DoResult(l.guard, ctx, func(ctx context.Context) (int, error) {
+		return l.client.Eval(ctx, refreshLockScript, []string{key}, token, ttl.Milliseconds()).Int()
+	})
 	if err != nil {
 		return false, errors.WithStack(err)
 	}

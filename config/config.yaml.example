@@ -38,3 +38,12 @@ upload_cleanup:
   interval: "10m"
   expire_after: "24h"
   batch_size: 100
+redis_breaker:
+  enabled: true
+  interval: "10s"
+  bucket_period: "1s"
+  min_requests: 20
+  failure_rate: 0.5
+  consecutive_failures: 5
+  timeout: "5s"
+  half_open_max_requests: 2
