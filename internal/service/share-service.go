@@ -2,7 +2,9 @@ package service
 
 import (
 	"WeDrive/internal/cache"
+	"WeDrive/internal/config"
 	"WeDrive/internal/model"
+	"WeDrive/internal/mq"
 	"WeDrive/internal/oss"
 	"WeDrive/internal/ratelimit"
 	"WeDrive/internal/repository"
@@ -27,8 +29,10 @@ type ShareService struct {
 	shareCache  *repository.ShareCacheRepo
 	fileRepo    *repository.FileRepo
 	rateLimiter *ratelimit.Limiter
+	bloomRepo   *repository.BloomRepo
 	storage     *oss.Storage
 	shareGroup  singleflight.Group
+	bloomPub    *mq.BloomRepairPublisher
 }
 
 type shareDownloadResp struct {
@@ -36,8 +40,42 @@ type shareDownloadResp struct {
 	FileName string
 }
 
-func NewShareService(shareRepo *repository.ShareRepo, shareCache *repository.ShareCacheRepo, fileRepo *repository.FileRepo, rateLimiter *ratelimit.Limiter, storage *oss.Storage) *ShareService {
-	return &ShareService{shareRepo: shareRepo, shareCache: shareCache, fileRepo: fileRepo, rateLimiter: rateLimiter, storage: storage}
+func NewShareService(shareRepo *repository.ShareRepo, shareCache *repository.ShareCacheRepo, fileRepo *repository.FileRepo, rateLimiter *ratelimit.Limiter, bloomRepo *repository.BloomRepo, storage *oss.Storage, bloomPub *mq.BloomRepairPublisher) *ShareService {
+	return &ShareService{shareRepo: shareRepo, shareCache: shareCache, fileRepo: fileRepo, rateLimiter: rateLimiter, bloomRepo: bloomRepo, storage: storage, bloomPub: bloomPub}
+}
+
+func (s *ShareService) shareTokenMightExist(ctx context.Context, token string) bool {
+	if !config.GlobalConf.Bloom.Enabled || s.bloomRepo == nil {
+		return true
+	}
+	ready, err := s.bloomRepo.IsReady(ctx, cache.BloomShareToken)
+	if err != nil {
+		logger.S.Warnf("读取分享 token 布隆状态失败:%v", err)
+		return true
+	}
+	if !ready {
+		return true
+	}
+	ok, err := s.bloomRepo.MightContain(ctx, cache.BloomShareToken, token)
+	if err != nil {
+		logger.S.Warnf("读取分享 token 布隆过滤器失败:%v", err)
+		return true
+	}
+	return ok
+}
+
+func (s *ShareService) addShareTokenBloom(ctx context.Context, token string) {
+	if !config.GlobalConf.Bloom.Enabled || s.bloomRepo == nil {
+		return
+	}
+	if err := s.bloomRepo.Add(ctx, cache.BloomShareToken, token); err != nil {
+		logger.S.Warnf("写入分享 token 布隆过滤器失败:%v", err)
+		if s.bloomPub != nil {
+			if publishErr := s.bloomPub.PublishShareTokenRepair(context.Background(), token); publishErr != nil {
+				logger.S.Warnf("发送分享 token 布隆补偿消息失败:%v", publishErr)
+			}
+		}
+	}
 }
 
 // CreateShareFile 创建分享文件
@@ -78,6 +116,7 @@ func (s *ShareService) CreateShareFile(ctx context.Context, userID uint, userFil
 	if err := s.shareCache.SetShareToken(ctx, shareTokenCacheFromModel(shareFile)); err != nil {
 		logger.S.Warnf("缓存分享文件失败:%v", err)
 	}
+	s.addShareTokenBloom(ctx, token)
 	return token, nil
 }
 
@@ -123,10 +162,13 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 	cachedShare, ok, err := s.shareCache.GetShareToken(ctx, token)
 	if err != nil {
 		logger.S.Warnf("读取分享缓存失败:%v", err)
-		return s.getShareFileByTokenSingleflight(ctx, token)
+		return nil, errors.WithMessage(ErrCacheUnavailable, "读取分享缓存失败")
 	}
 	if ok {
 		return shareFileFromCache(cachedShare), nil
+	}
+	if !s.shareTokenMightExist(ctx, token) {
+		return nil, gorm.ErrRecordNotFound
 	}
 
 	//缓存未命中，获取锁
@@ -134,7 +176,7 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 	lockToken, locked, err := s.rateLimiter.TryLock(ctx, lockKey, cacheRebuildLockTTL)
 	if err != nil {
 		logger.S.Warnf("获取分享缓存重建锁失败:%v", err)
-		return s.getShareFileByTokenSingleflight(ctx, token)
+		return nil, errors.WithMessage(ErrCacheUnavailable, "获取分享缓存重建锁失败")
 	}
 	//获取到锁，重建缓存
 	if locked {
@@ -145,7 +187,7 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 		cachedShare, ok, err = s.shareCache.GetShareToken(ctx, token)
 		if err != nil {
 			logger.S.Warnf("读取分享缓存失败:%v", err)
-			return s.getShareFileByTokenSingleflight(ctx, token)
+			return nil, errors.WithMessage(ErrCacheUnavailable, "读取分享缓存失败")
 		}
 		if ok {
 			return shareFileFromCache(cachedShare), nil
@@ -170,7 +212,7 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 		cachedShare, ok, err = s.shareCache.GetShareToken(ctx, token)
 		if err != nil {
 			logger.S.Warnf("读取分享缓存失败:%v", err)
-			return s.getShareFileByTokenSingleflight(ctx, token)
+			return nil, errors.WithMessage(ErrCacheUnavailable, "读取分享缓存失败")
 		}
 		if ok {
 			return shareFileFromCache(cachedShare), nil
@@ -178,7 +220,7 @@ func (s *ShareService) getShareFileByToken(ctx context.Context, token string) (*
 	}
 
 	logger.S.Warnf("等待分享缓存重建超时, token: %s", token)
-	return s.getShareFileByTokenSingleflight(ctx, token)
+	return nil, ErrCacheRebuilding
 }
 
 // getShareFileByTokenSingleflight 合并同一 token 的数据库查询。

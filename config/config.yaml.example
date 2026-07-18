@@ -47,3 +47,8 @@ redis_breaker:
   consecutive_failures: 5
   timeout: "5s"
   half_open_max_requests: 2
+bloom:
+  enabled: true
+  bits: 95850584
+  hashes: 7
+  warmup_batch_size: 1000

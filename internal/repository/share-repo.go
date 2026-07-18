@@ -3,6 +3,7 @@ package repository
 import (
 	"WeDrive/internal/model"
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
@@ -26,4 +27,20 @@ func (r *ShareRepo) GetShareFile(ctx context.Context, token string) (*model.Shar
 	var shareFile model.ShareFile
 	err := r.db.WithContext(ctx).Where("share_token = ?", token).First(&shareFile).Error
 	return &shareFile, errors.WithStack(err)
+}
+
+// ListActiveShareTokenAfterID 分页查询仍有效的分享 token。
+func (r *ShareRepo) ListActiveShareTokenAfterID(ctx context.Context, lastID uint, limit int, now time.Time) ([]model.ShareFile, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	var list []model.ShareFile
+	err := r.db.WithContext(ctx).
+		Select("id", "share_token").
+		Where("id > ?", lastID).
+		Where("expires_at IS NULL OR expires_at > ?", now).
+		Order("id ASC").
+		Limit(limit).
+		Find(&list).Error
+	return list, errors.WithStack(err)
 }

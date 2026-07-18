@@ -2,6 +2,7 @@ package service
 
 import (
 	"WeDrive/internal/cache"
+	"WeDrive/internal/config"
 	"WeDrive/internal/model"
 	"WeDrive/internal/mq"
 	"WeDrive/internal/oss"
@@ -58,10 +59,12 @@ type FileService struct {
 	rateLimiter    *ratelimit.Limiter
 	userRepo       *repository.UserRepo
 	userCache      *repository.UserCacheRepo
+	bloomRepo      *repository.BloomRepo
 	storage        *oss.Storage
 	db             *gorm.DB
 	cachePublisher *mq.CacheInvalidationPublisher
 	uploadVerifier *mq.UploadVerificationPublisher
+	bloomPublisher *mq.BloomRepairPublisher
 }
 
 type RecycleFileResp struct {
@@ -179,8 +182,42 @@ type instantPrepareState struct {
 	Challenges  []InstantUploadChallenge `json:"challenges"`
 }
 
-func NewFileService(fileRepo *repository.FileRepo, fileCache *repository.FileCacheRepo, uploadCache *repository.UploadCacheRepo, rateLimiter *ratelimit.Limiter, userRepo *repository.UserRepo, userCache *repository.UserCacheRepo, storage *oss.Storage, db *gorm.DB, cachePublisher *mq.CacheInvalidationPublisher, uploadVerifier *mq.UploadVerificationPublisher) *FileService {
-	return &FileService{fileRepo: fileRepo, fileCache: fileCache, uploadCache: uploadCache, rateLimiter: rateLimiter, storage: storage, db: db, userRepo: userRepo, userCache: userCache, cachePublisher: cachePublisher, uploadVerifier: uploadVerifier}
+func NewFileService(fileRepo *repository.FileRepo, fileCache *repository.FileCacheRepo, uploadCache *repository.UploadCacheRepo, rateLimiter *ratelimit.Limiter, userRepo *repository.UserRepo, userCache *repository.UserCacheRepo, bloomRepo *repository.BloomRepo, storage *oss.Storage, db *gorm.DB, cachePublisher *mq.CacheInvalidationPublisher, uploadVerifier *mq.UploadVerificationPublisher, bloomPublisher *mq.BloomRepairPublisher) *FileService {
+	return &FileService{fileRepo: fileRepo, fileCache: fileCache, uploadCache: uploadCache, rateLimiter: rateLimiter, storage: storage, db: db, userRepo: userRepo, userCache: userCache, bloomRepo: bloomRepo, cachePublisher: cachePublisher, uploadVerifier: uploadVerifier, bloomPublisher: bloomPublisher}
+}
+
+func (s *FileService) fileIdentityMightExist(ctx context.Context, hashType string, fileHash string) bool {
+	if !config.GlobalConf.Bloom.Enabled || s.bloomRepo == nil {
+		return true
+	}
+	ready, err := s.bloomRepo.IsReady(ctx, cache.BloomFileIdentity)
+	if err != nil {
+		logger.S.Warnf("读取文件身份布隆状态失败:%v", err)
+		return true
+	}
+	if !ready {
+		return true
+	}
+	ok, err := s.bloomRepo.MightContain(ctx, cache.BloomFileIdentity, cache.FileIdentityBloomItem(hashType, fileHash))
+	if err != nil {
+		logger.S.Warnf("读取文件身份布隆过滤器失败:%v", err)
+		return true
+	}
+	return ok
+}
+
+func (s *FileService) addFileIdentityBloom(ctx context.Context, hashType string, fileHash string) {
+	if !config.GlobalConf.Bloom.Enabled || s.bloomRepo == nil {
+		return
+	}
+	if err := s.bloomRepo.Add(ctx, cache.BloomFileIdentity, cache.FileIdentityBloomItem(hashType, fileHash)); err != nil {
+		logger.S.Warnf("写入文件身份布隆过滤器失败:%v", err)
+		if s.bloomPublisher != nil {
+			if publishErr := s.bloomPublisher.PublishFileIdentityRepair(context.Background(), hashType, fileHash); publishErr != nil {
+				logger.S.Warnf("发送文件身份布隆补偿消息失败:%v", publishErr)
+			}
+		}
+	}
 }
 
 func (s *FileService) deleteUserInfoCache(ctx context.Context, userID uint) {
@@ -857,6 +894,9 @@ func (s *FileService) failChunkUploadVerification(ctx context.Context, session *
 // finalizeVerifiedChunkUpload 创建文件池和用户文件记录并完成上传会话
 func (s *FileService) finalizeVerifiedChunkUpload(ctx context.Context, session *model.UploadSession) (bool, error) {
 	deleteUploadedObject := false
+	var createdFileStore *model.FileStore
+	createdBloomHashType := ""
+	createdBloomFileHash := ""
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		//加锁后确认会话仍可被处理
 		lockedSession, lockErr := s.fileRepo.GetUploadSessionByIDForUpdateAnyUser(ctx, session.ID, tx)
@@ -913,6 +953,9 @@ func (s *FileService) finalizeVerifiedChunkUpload(ctx context.Context, session *
 				deleteUploadedObject = true
 				break
 			}
+			createdFileStore = newFileStore
+			createdBloomHashType = newFileStore.HashType
+			createdBloomFileHash = newFileStore.FileHash
 			//创建用户文件记录并更新用户空间
 			newUserFile := &model.UserFile{
 				UserId:      lockedSession.UserID,
@@ -941,6 +984,14 @@ func (s *FileService) finalizeVerifiedChunkUpload(ctx context.Context, session *
 		}
 		return nil
 	})
+	if err == nil && createdFileStore != nil {
+		if cacheErr := s.fileCache.SetFileIdentity(ctx, createdFileStore); cacheErr != nil {
+			logger.S.Warnf("写入文件身份缓存失败:%v", cacheErr)
+		}
+		if createdBloomHashType != "" && createdBloomFileHash != "" {
+			s.addFileIdentityBloom(ctx, createdBloomHashType, createdBloomFileHash)
+		}
+	}
 	return deleteUploadedObject, err
 }
 
@@ -962,6 +1013,7 @@ func (s *FileService) QuickCheck(ctx context.Context, userID uint, req QuickChec
 	exists, hit, err := s.fileCache.GetFileSample(ctx, req.FileSize, req.HeadHash, req.MidHash, req.TailHash)
 	if err != nil {
 		logger.S.Warnf("读取抽样哈希缓存失败:%v", err)
+		return false, errors.WithMessage(ErrCacheUnavailable, "读取抽样哈希缓存失败")
 	}
 	if hit {
 		return exists, nil
@@ -998,8 +1050,12 @@ func (s *FileService) PrepareInstantUpload(ctx context.Context, userID uint, req
 	fileStore, hit, err := s.fileCache.GetFileIdentity(ctx, req.HashType, req.FileHash)
 	if err != nil {
 		logger.S.Warnf("读取文件身份缓存失败:%v", err)
+		return PrepareInstantUploadResp{}, errors.WithMessage(ErrCacheUnavailable, "读取文件身份缓存失败")
 	}
 	if !hit {
+		if !s.fileIdentityMightExist(ctx, req.HashType, req.FileHash) {
+			return PrepareInstantUploadResp{}, ErrInstantUploadUnavailable
+		}
 		fileStore, err = s.fileRepo.GetFileByIdentity(ctx, req.HashType, req.FileHash)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1277,6 +1333,9 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 	}()
 	// 开启数据库事务
 	var uploadedID uint
+	var createdFileStore *model.FileStore
+	createdBloomHashType := ""
+	createdBloomFileHash := ""
 	s.deleteUserInfoCache(ctx, userID)
 	s.deleteUserFileListCache(ctx, userID, parentID)
 	err = s.db.Transaction(func(tx *gorm.DB) error {
@@ -1295,6 +1354,9 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		if err != nil {
 			return errors.WithMessage(err, "文件元数据存储失败")
 		}
+		createdFileStore = newFileStore
+		createdBloomHashType = newFileStore.HashType
+		createdBloomFileHash = newFileStore.FileHash
 		// 插入用户文件数据
 		newUserFile := &model.UserFile{
 			UserId:      userID,
@@ -1316,6 +1378,14 @@ func (s *FileService) UploadFile(ctx context.Context, fileHeader *multipart.File
 		return nil
 	})
 	if err == nil {
+		if createdFileStore != nil {
+			if cacheErr := s.fileCache.SetFileIdentity(ctx, createdFileStore); cacheErr != nil {
+				logger.S.Warnf("写入文件身份缓存失败:%v", cacheErr)
+			}
+			if createdBloomHashType != "" && createdBloomFileHash != "" {
+				s.addFileIdentityBloom(ctx, createdBloomHashType, createdBloomFileHash)
+			}
+		}
 		cache.DelayedDelete(cache.DelayedDeleteDelay, func(ctx context.Context) error {
 			return s.userCache.DeleteUserInfo(ctx, userID)
 		})
@@ -1721,6 +1791,7 @@ func (s *FileService) GetDownloadURL(ctx context.Context, userID uint, userFileI
 	fileMeta, hit, err := s.fileCache.GetDownloadFileMeta(ctx, userID, userFileID)
 	if err != nil {
 		logger.S.Warnf("读取下载文件元数据缓存失败:%v", err)
+		return DownloadFileResp{}, errors.WithMessage(ErrCacheUnavailable, "读取下载文件元数据缓存失败")
 	}
 	if !hit {
 		file, fileName, err := s.fileRepo.GetFileStoreByID(ctx, userFileID, userID)

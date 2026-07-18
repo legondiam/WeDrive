@@ -28,9 +28,14 @@ const (
 // startBackgroundJobs 启动后台任务
 func startBackgroundJobs(db *gorm.DB, redisClient *redis.Client, minioClient *minio.Client, mqConn *amqp.Connection) {
 	redisGuard := cacheguard.NewRedisGuard()
+	bloomRepo := repository.NewBloomRepo(redisClient, redisGuard)
+	fileRepo := repository.NewFileRepo(db)
+	shareRepo := repository.NewShareRepo(db)
 	startCacheInvalidationConsumer(redisClient, redisGuard, mqConn)
-	startUploadVerificationConsumer(db, redisClient, redisGuard, minioClient, mqConn)
-	startExpiredUploadCleanup(db, redisClient, redisGuard, minioClient)
+	startBloomRepairConsumer(bloomRepo, mqConn)
+	startUploadVerificationConsumer(db, redisClient, redisGuard, bloomRepo, minioClient, mqConn)
+	startExpiredUploadCleanup(db, redisClient, redisGuard, bloomRepo, minioClient)
+	startBloomWarmup(fileRepo, shareRepo, bloomRepo)
 }
 
 func startCacheInvalidationConsumer(redisClient *redis.Client, redisGuard *cacheguard.RedisGuard, mqConn *amqp.Connection) {
@@ -43,7 +48,15 @@ func startCacheInvalidationConsumer(redisClient *redis.Client, redisGuard *cache
 	logger.S.Info("缓存失效消费者已启动")
 }
 
-func startUploadVerificationConsumer(db *gorm.DB, redisClient *redis.Client, redisGuard *cacheguard.RedisGuard, minioClient *minio.Client, mqConn *amqp.Connection) {
+func startBloomRepairConsumer(bloomRepo *repository.BloomRepo, mqConn *amqp.Connection) {
+	if err := mq.StartBloomRepairConsumer(mqConn, bloomRepo); err != nil {
+		logger.S.Errorf("布隆补偿消费者启动失败: %+v", err)
+		return
+	}
+	logger.S.Info("布隆补偿消费者已启动")
+}
+
+func startUploadVerificationConsumer(db *gorm.DB, redisClient *redis.Client, redisGuard *cacheguard.RedisGuard, bloomRepo *repository.BloomRepo, minioClient *minio.Client, mqConn *amqp.Connection) {
 	fileRepo := repository.NewFileRepo(db)
 	fileCacheRepo := repository.NewFileCacheRepo(redisClient, redisGuard)
 	uploadCacheRepo := repository.NewUploadCacheRepo(redisClient, redisGuard)
@@ -53,7 +66,8 @@ func startUploadVerificationConsumer(db *gorm.DB, redisClient *redis.Client, red
 	storage := oss.NewStorage(minioClient)
 	cachePublisher := mq.NewCacheInvalidationPublisher(mqConn)
 	uploadVerifier := mq.NewUploadVerificationPublisher(mqConn)
-	fileService := service.NewFileService(fileRepo, fileCacheRepo, uploadCacheRepo, rateLimiter, userRepo, userCacheRepo, storage, db, cachePublisher, uploadVerifier)
+	bloomPublisher := mq.NewBloomRepairPublisher(mqConn)
+	fileService := service.NewFileService(fileRepo, fileCacheRepo, uploadCacheRepo, rateLimiter, userRepo, userCacheRepo, bloomRepo, storage, db, cachePublisher, uploadVerifier, bloomPublisher)
 	if err := mq.StartUploadVerificationConsumer(mqConn, fileService.VerifyChunkUpload); err != nil {
 		logger.S.Errorf("上传校验消费者启动失败: %+v", err)
 		return
@@ -62,7 +76,7 @@ func startUploadVerificationConsumer(db *gorm.DB, redisClient *redis.Client, red
 }
 
 // startExpiredUploadCleanup 启动僵尸分块定时清理任务。
-func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, redisGuard *cacheguard.RedisGuard, minioClient *minio.Client) {
+func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, redisGuard *cacheguard.RedisGuard, bloomRepo *repository.BloomRepo, minioClient *minio.Client) {
 	cleanupConf := config.GlobalConf.UploadCleanup
 	if !cleanupConf.Enabled {
 		return
@@ -88,7 +102,7 @@ func startExpiredUploadCleanup(db *gorm.DB, redisClient *redis.Client, redisGuar
 	userRepo := repository.NewUserRepo(db)
 	userCacheRepo := repository.NewUserCacheRepo(redisClient, redisGuard)
 	storage := oss.NewStorage(minioClient)
-	fileService := service.NewFileService(fileRepo, fileCacheRepo, uploadCacheRepo, rateLimiter, userRepo, userCacheRepo, storage, db, nil, nil)
+	fileService := service.NewFileService(fileRepo, fileCacheRepo, uploadCacheRepo, rateLimiter, userRepo, userCacheRepo, bloomRepo, storage, db, nil, nil, nil)
 
 	go func() {
 		// 服务启动后先执行一轮，减少历史残留会话堆积时间。

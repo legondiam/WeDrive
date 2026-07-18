@@ -79,6 +79,12 @@ type RedisBreakerConf struct {
 	Timeout             time.Duration `mapstructure:"timeout"`
 	HalfOpenMaxRequests int           `mapstructure:"half_open_max_requests"`
 }
+type BloomConf struct {
+	Enabled         bool `mapstructure:"enabled"`
+	Bits            int  `mapstructure:"bits"`
+	Hashes          int  `mapstructure:"hashes"`
+	WarmupBatchSize int  `mapstructure:"warmup_batch_size"`
+}
 type Conf struct {
 	App           AppConf           `mapstructure:"app"`
 	DB            DbConf            `mapstructure:"database"`
@@ -90,6 +96,7 @@ type Conf struct {
 	Cookie        CookieConf        `mapstructure:"cookie"`
 	UploadCleanup UploadCleanupConf `mapstructure:"upload_cleanup"`
 	RedisBreaker  RedisBreakerConf  `mapstructure:"redis_breaker"`
+	Bloom         BloomConf         `mapstructure:"bloom"`
 }
 
 var GlobalConf Conf

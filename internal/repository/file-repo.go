@@ -190,6 +190,21 @@ func (r *FileRepo) GetFileByIdentity(ctx context.Context, hashType string, hash 
 	return &fileStore, errors.WithStack(err)
 }
 
+// ListFileIdentityAfterID 分页查询文件身份数据。
+func (r *FileRepo) ListFileIdentityAfterID(ctx context.Context, lastID uint, limit int) ([]model.FileStore, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	var list []model.FileStore
+	err := r.db.WithContext(ctx).
+		Select("id", "hash_type", "file_hash").
+		Where("id > ?", lastID).
+		Order("id ASC").
+		Limit(limit).
+		Find(&list).Error
+	return list, errors.WithStack(err)
+}
+
 // GetFileBySample 根据抽样哈希获取文件
 func (r *FileRepo) GetFileBySample(ctx context.Context, fileSize int64, headHash string, midHash string, tailHash string) (bool, error) {
 	var count int64
